@@ -1,8 +1,10 @@
 import { useEffect, useId, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { logout as logoutApi } from '../api/auth'
 import { Button } from '../components/ui'
 import {
   clearSession,
+  getRefreshToken,
   getStoredUser,
   getStoredWorkspace,
   isAuthenticated,
@@ -27,7 +29,9 @@ export function AppLayout() {
   const workspace = getStoredWorkspace()
   const wideMain = location.pathname.startsWith('/app/analyze')
 
-  function logout() {
+  async function logout() {
+    const refresh = getRefreshToken()
+    await logoutApi(refresh)
     clearSession()
     setMenuOpen(false)
     navigate('/login', { replace: true })

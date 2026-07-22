@@ -32,6 +32,10 @@ class WorkspaceColumnMemory(Base):
     phrase: Mapped[str] = mapped_column(String(200), nullable=False)
     column_tokens: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     hit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # NULL = grandfather / no TTL yet (P1.3); set on write when TTL_DAYS > 0
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

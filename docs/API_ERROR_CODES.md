@@ -23,8 +23,9 @@ Clients should branch on **HTTP status** first, then parse `detail` / task `fail
 |--------|------|------------------|---------------|
 | 201 | Register ok | — | Store `access_token` + `refresh_token` |
 | 200 | Login / refresh / OIDC callback ok | — | Store tokens |
+| 204 | Logout ok (refresh jti revoked) | — | Clear local tokens |
 | 400 | Validation / bad OIDC state | Pydantic / `Invalid or expired OIDC state` | Show field error |
-| 401 | Bad credentials / bad-expired token | `Incorrect email or password` / `Invalid or expired token` | Re-login; refresh once on API 401 |
+| 401 | Bad credentials / bad-expired / **revoked** refresh | `Incorrect email or password` / `Invalid or expired refresh token` | Re-login; refresh once on API 401 |
 | 404 | OIDC disabled | `OIDC not enabled` | Hide SSO UI |
 | 409 | Email taken | `Email already registered` | Suggest login |
 | 429 | Rate limit | `Rate limit exceeded: ...` | Back off |
@@ -34,8 +35,17 @@ Clients should branch on **HTTP status** first, then parse `detail` / task `fail
 
 | Token | `type` claim | Default TTL | Use |
 |-------|--------------|-------------|-----|
-| Access | `access` | `ACCESS_TOKEN_EXPIRE_MINUTES` (30) | `Authorization: Bearer` |
-| Refresh | `refresh` | `REFRESH_TOKEN_EXPIRE_MINUTES` (10080) | `POST /api/v1/auth/refresh` |
+| Access | `access` | `ACCESS_TOKEN_EXPIRE_MINUTES` (30) | `Authorization: Bearer` (stateless) |
+| Refresh | `refresh` | `REFRESH_TOKEN_EXPIRE_MINUTES` (10080) | `POST /api/v1/auth/refresh`; **`jti` stored** in `refresh_sessions` |
+
+### Refresh sessions (P1.2)
+
+| Behavior | Rule |
+|----------|------|
+| Multi-device | Multiple live refresh `jti` rows per user allowed |
+| Rotation | Successful refresh **revokes** previous `jti`; reuse → **401** (no family kill-switch in Sprint 2) |
+| Logout | `POST /api/v1/auth/logout` with `{refresh_token}` revokes **that** session only (204 even if already dead) |
+| Deploy note | Refresh tokens issued before migration have no row → refresh **401**; users must re-login |
 
 ### OIDC (optional)
 

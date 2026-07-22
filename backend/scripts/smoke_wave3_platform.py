@@ -118,6 +118,48 @@ def main() -> None:
         db.commit()
         print("WORKSPACE_MEMORY_OK")
 
+        # P1.3 — TTL: expired rows excluded from load; grandfather NULL still loads
+        from datetime import UTC, datetime, timedelta
+
+        from app.models import WorkspaceColumnMemory
+        from sqlalchemy import func, select
+
+        expired = WorkspaceColumnMemory(
+            workspace_id=ws.id,
+            dataset_id=ds.id,
+            phrase=f"expired_{uuid4().hex[:6]}",
+            column_tokens=["region"],
+            hit_count=99,
+            expires_at=datetime.now(UTC) - timedelta(days=1),
+        )
+        db.add(expired)
+        db.commit()
+        syn2 = workspace_memory.load_synonyms(db, workspace_id=ws.id, dataset_id=ds.id)
+        assert expired.phrase not in syn2
+        print("WORKSPACE_MEMORY_TTL_OK")
+
+        # P1.3 — capacity cap: expire-then-LRU keeps count <= max_rows
+        settings.workspace_memory_max_rows = 8
+        for i in range(20):
+            workspace_memory.remember_from_link(
+                db,
+                workspace_id=ws.id,
+                dataset_id=ds.id,
+                question=f"cap phrase unique{i} column",
+                selected_columns=[f"col_{i}"],
+            )
+        db.commit()
+        cnt = int(
+            db.scalar(
+                select(func.count()).select_from(WorkspaceColumnMemory).where(
+                    WorkspaceColumnMemory.workspace_id == ws.id
+                )
+            )
+            or 0
+        )
+        assert cnt <= settings.workspace_memory_max_rows, cnt
+        print(f"WORKSPACE_MEMORY_CAP_OK rows={cnt} max={settings.workspace_memory_max_rows}")
+
         # ACL table projection
         acl = DatasetAcl(
             workspace_id=ws.id,

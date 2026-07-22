@@ -26,6 +26,8 @@
 | `SKILL_DATA_PROFILE_VERSION` | `1.0.0` | API · Worker | Pinned on Run/Trace | |
 | `MYSQL_RO_DSN` | empty | API · Worker | Optional `mysql_ro` plane | `mysql://user:pass@host:3306/db` |
 | `WORKSPACE_MEMORY_ENABLED` | `true` | Worker | Persist linking synonyms | |
+| `WORKSPACE_MEMORY_TTL_DAYS` | `90` | Worker / API | Synonym row TTL (0 = no expiry on write) | P1.3 |
+| `WORKSPACE_MEMORY_MAX_ROWS` | `2000` | Worker / API | Max rows per workspace (expire then LRU) | P1.3 |
 | `OIDC_ENABLED` | `false` | API | SSO MVP | Requires issuer/client/redirect |
 | `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` / `OIDC_REDIRECT_URI` | empty | API | OIDC | Endpoints must share issuer host |
 | `OIDC_SCOPES` | `openid email profile` | API | OIDC | |

@@ -115,6 +115,10 @@ class Settings(BaseSettings):
 
     # Wave 3 — Workspace memory (synonym persist from successful Runs)
     workspace_memory_enabled: bool = True
+    # P1.3 — TTL days (0 = never auto-expire); NULL expires_at rows are grandfathered until upsert
+    workspace_memory_ttl_days: int = 90
+    # P1.3 — max rows per workspace (expire first, then LRU by updated_at/hit_count)
+    workspace_memory_max_rows: int = 2000
 
     # T-10 — SSE task progress (DB poll; not LLM token stream)
     task_sse_poll_seconds: float = 0.5

@@ -19,6 +19,10 @@ class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=10, max_length=4096)
 
 
+class LogoutRequest(BaseModel):
+    refresh_token: str = Field(min_length=10, max_length=4096)
+
+
 class UserOut(BaseModel):
     id: UUID
     email: EmailStr

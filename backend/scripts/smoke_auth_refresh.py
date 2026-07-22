@@ -1,11 +1,11 @@
-"""P0 smoke: access + refresh JWT pair (DB required; Redis optional)."""
+"""P0+P1.2 smoke: access + refresh JWT pair with jti revoke / rotation."""
 
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -52,6 +52,7 @@ def main() -> None:
     assert access_payload["type"] == "access"
     refresh_payload = decode_token(refresh, expected_type="refresh")
     assert refresh_payload["type"] == "refresh"
+    assert refresh_payload.get("jti")
 
     # Refresh token must not work as Bearer access
     bad = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {refresh}"})
@@ -66,6 +67,12 @@ def main() -> None:
     new_body = rotated.json()
     assert new_body["access_token"] != access
     assert new_body.get("refresh_token")
+    new_refresh = new_body["refresh_token"]
+
+    # P1.2: old refresh jti must fail after rotation (reuse → 401, no family kill)
+    reuse = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh})
+    assert reuse.status_code == 401, reuse.text
+    print("REFRESH_ROTATION_REUSE_401_OK")
 
     me2 = client.get(
         "/api/v1/auth/me",
@@ -77,10 +84,32 @@ def main() -> None:
     wrong = client.post("/api/v1/auth/refresh", json={"refresh_token": access})
     assert wrong.status_code == 401, wrong.text
 
-    # Unit: create_* helpers agree on types
-    uid = me.json()["id"]
-    from uuid import UUID
+    # Multi-device: second login creates another live session
+    login2 = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert login2.status_code == 200, login2.text
+    device_b = login2.json()["refresh_token"]
+    assert device_b != new_refresh
 
+    # Logout current device (device A = new_refresh) — device B still works
+    lo = client.post("/api/v1/auth/logout", json={"refresh_token": new_refresh})
+    assert lo.status_code == 204, lo.text
+    dead = client.post("/api/v1/auth/refresh", json={"refresh_token": new_refresh})
+    assert dead.status_code == 401, dead.text
+    print("LOGOUT_CURRENT_SESSION_OK")
+
+    still = client.post("/api/v1/auth/refresh", json={"refresh_token": device_b})
+    assert still.status_code == 200, still.text
+    print("MULTI_DEVICE_SESSION_OK")
+
+    # Idempotent logout on already-revoked / garbage
+    lo2 = client.post("/api/v1/auth/logout", json={"refresh_token": new_refresh})
+    assert lo2.status_code == 204, lo2.text
+
+    # Unit: create_* helpers agree on types (stateless mint; not a live session)
+    uid = me.json()["id"]
     a2 = create_access_token(user_id=UUID(uid), email=email)
     r2 = create_refresh_token(user_id=UUID(uid), email=email)
     assert decode_access_token(a2)["type"] == "access"

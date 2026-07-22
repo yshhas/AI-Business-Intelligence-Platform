@@ -26,6 +26,7 @@ def main() -> None:
     required_paths = [
         "/api/v1/auth/login",
         "/api/v1/auth/refresh",
+        "/api/v1/auth/logout",
         "/api/v1/auth/oidc/login",
         "/health/ready",
         "/metrics",

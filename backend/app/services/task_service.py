@@ -6,12 +6,12 @@ import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.observability import log_run
-from app.models import AgentRunStep, AnalysisTask, Dataset, Workspace
+from app.models import AgentRunStep, AnalysisTask, Dataset, DatasetAcl, Workspace
 from app.services import cost_budget
 from app.services import queue as task_queue
 from app.services import permissions as perm
@@ -340,19 +340,50 @@ def list_tasks(
     if member is None:
         return items
     workspace = db.get(Workspace, workspace_id)
+    if not items:
+        return []
+
+    uid = user_id if user_id is not None else getattr(member, "user_id", None)
+    dataset_ids = {t.dataset_id for t in items}
+    datasets = {
+        d.id: d
+        for d in db.scalars(select(Dataset).where(Dataset.id.in_(dataset_ids))).all()
+    }
+
+    # Batch ACL preload (P1.5) — avoid per-task COUNT/GET round-trips.
+    owner = perm.is_workspace_owner(member, workspace=workspace)
+    datasets_with_acl: set[UUID] = set()
+    acl_by_dataset: dict[UUID, DatasetAcl] = {}
+    if not owner and dataset_ids:
+        restricted = db.execute(
+            select(DatasetAcl.dataset_id, func.count())
+            .where(DatasetAcl.dataset_id.in_(dataset_ids))
+            .group_by(DatasetAcl.dataset_id)
+        ).all()
+        datasets_with_acl = {row[0] for row in restricted if int(row[1] or 0) > 0}
+        if uid is not None and datasets_with_acl:
+            entries = db.scalars(
+                select(DatasetAcl).where(
+                    DatasetAcl.user_id == uid,
+                    DatasetAcl.dataset_id.in_(datasets_with_acl),
+                )
+            ).all()
+            acl_by_dataset = {e.dataset_id: e for e in entries}
+
     visible: list[AnalysisTask] = []
     for task in items:
-        dataset = db.get(Dataset, task.dataset_id)
+        dataset = datasets.get(task.dataset_id)
         if dataset is None:
             continue
-        if perm.can_access_task(
-            db,
-            member,  # type: ignore[arg-type]
-            task,
-            dataset,
-            workspace=workspace,
-            user_id=user_id if user_id is not None else getattr(member, "user_id", None),
-        ):
+        if owner or task.user_id == uid:
+            visible.append(task)
+            continue
+        # Mirror can_read_dataset with preloaded ACL (default-open when no ACL rows).
+        if task.dataset_id not in datasets_with_acl:
+            visible.append(task)
+            continue
+        entry = acl_by_dataset.get(task.dataset_id)
+        if entry is not None and entry.can_read:
             visible.append(task)
     return visible
 

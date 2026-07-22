@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.db import get_db
 from app.core.security import (
-    create_token_pair,
     decode_token,
     hash_password,
     verify_password,
@@ -17,6 +16,7 @@ from app.models import User
 from app.schemas.auth import (
     AuthResponse,
     LoginRequest,
+    LogoutRequest,
     RefreshRequest,
     RegisterRequest,
     TokenRefreshResponse,
@@ -24,6 +24,7 @@ from app.schemas.auth import (
     WorkspaceOut,
 )
 from app.services import rate_limit
+from app.services import refresh_sessions as rs
 from app.services import workspace_service
 from app.services.rate_limit import RateLimitExceeded
 
@@ -40,8 +41,13 @@ def _client_key(request: Request, email: str | None = None) -> str:
     return f"{ip}:{suffix}"
 
 
-def _auth_response(user: User, workspace_out: WorkspaceOut | None) -> AuthResponse:
-    access, refresh = create_token_pair(user_id=user.id, email=user.email)
+def _auth_response(
+    db: Session,
+    user: User,
+    workspace_out: WorkspaceOut | None,
+) -> AuthResponse:
+    access, refresh = rs.issue_token_pair(db, user_id=user.id, email=user.email)
+    db.commit()
     return AuthResponse(
         access_token=access,
         refresh_token=refresh,
@@ -79,6 +85,7 @@ def register(
     db.refresh(workspace)
 
     return _auth_response(
+        db,
         user,
         WorkspaceOut(
             id=workspace.id,
@@ -118,22 +125,25 @@ def login(
             created_at=workspace.created_at,
         )
 
-    return _auth_response(user, workspace_out)
+    return _auth_response(db, user, workspace_out)
 
 
 @router.post("/refresh", response_model=TokenRefreshResponse)
 def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> TokenRefreshResponse:
     try:
         payload = decode_token(body.refresh_token, expected_type="refresh")
-        user_id = payload["sub"]
-    except (InvalidTokenError, KeyError, ValueError):
+        user_id = UUID(str(payload["sub"]))
+        jti = str(payload.get("jti") or "")
+        if not jti:
+            raise InvalidTokenError("missing jti")
+    except (InvalidTokenError, KeyError, ValueError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
 
-    user = db.get(User, UUID(str(user_id)))
+    user = db.get(User, user_id)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -141,8 +151,35 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> TokenRefresh
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access, new_refresh = create_token_pair(user_id=user.id, email=user.email)
+    try:
+        access, new_refresh = rs.rotate_refresh(
+            db, user_id=user.id, email=user.email, old_jti=jti
+        )
+        db.commit()
+    except rs.RefreshSessionError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+
     return TokenRefreshResponse(access_token=access, refresh_token=new_refresh)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(body: LogoutRequest, db: Session = Depends(get_db)) -> None:
+    """Revoke the current refresh session (this device). Best-effort for clients."""
+    try:
+        payload = decode_token(body.refresh_token, expected_type="refresh")
+        jti = str(payload.get("jti") or "")
+    except (InvalidTokenError, KeyError, ValueError, TypeError):
+        # Idempotent: bad token → still 204 (client clears local storage)
+        return None
+    if jti:
+        rs.revoke_jti(db, jti=jti)
+        db.commit()
+    return None
 
 
 @router.get("/me", response_model=UserOut)
@@ -204,4 +241,4 @@ def oidc_callback(
             role=role,
             created_at=workspace.created_at,
         )
-    return _auth_response(user, workspace_out)
+    return _auth_response(db, user, workspace_out)
