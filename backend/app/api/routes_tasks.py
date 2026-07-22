@@ -17,6 +17,7 @@ from app.schemas.task import (
     TaskCreateRequest,
     TaskListOut,
     TaskOut,
+    TaskRejectRequest,
 )
 from app.services import artifact_service
 from app.services import dataset_service
@@ -95,6 +96,7 @@ def create_task(
             member=member,
             skill_id=body.skill_id,
             idempotency_key=idempotency_key,
+            require_sql_approval=body.require_sql_approval,
         )
     except TaskServiceError as exc:
         raise _http_error(exc) from exc
@@ -338,6 +340,31 @@ def cancel_task(
             user_id=user.id,
             member_role=member.role,
             member=member,
+        )
+    except TaskServiceError as exc:
+        raise _http_error(exc) from exc
+    return TaskOut.model_validate(task)
+
+
+@router.post("/{task_id}/reject", response_model=TaskOut)
+def reject_task(
+    workspace_id: UUID,
+    task_id: UUID,
+    body: TaskRejectRequest | None = None,
+    ctx: tuple[User, WorkspaceMember] = Depends(require_workspace_member),
+    db: Session = Depends(get_db),
+) -> TaskOut:
+    """HITL H1: reject awaiting_approval (Approve→Execute is H2 — no approve route)."""
+    user, member = ctx
+    try:
+        task = task_service.reject_task(
+            db,
+            workspace_id=workspace_id,
+            task_id=task_id,
+            user_id=user.id,
+            member_role=member.role,
+            member=member,
+            reason=(body.reason if body else None),
         )
     except TaskServiceError as exc:
         raise _http_error(exc) from exc

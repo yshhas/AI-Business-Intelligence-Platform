@@ -19,6 +19,7 @@ def build_graph(ctx: AnalysisContext, sink: Callable[[StepRecord], None] | None 
     g.add_node("generate_sql", partial(nodes.generate_sql, ctx=ctx, sink=sink))
     g.add_node("validate_sql", partial(nodes.validate_sql, ctx=ctx, sink=sink))
     g.add_node("execute_sql", partial(nodes.execute_sql, ctx=ctx, sink=sink))
+    g.add_node("hitl_plan_done", partial(nodes.hitl_plan_done, ctx=ctx, sink=sink))
     g.add_node("summarize", partial(nodes.summarize, ctx=ctx, sink=sink))
     g.add_node("build_charts", partial(nodes.build_charts, ctx=ctx, sink=sink))
     g.add_node("write_report", partial(nodes.write_report, ctx=ctx, sink=sink))
@@ -40,10 +41,12 @@ def build_graph(ctx: AnalysisContext, sink: Callable[[StepRecord], None] | None 
         nodes.route_after_validate,
         {
             "execute_sql": "execute_sql",
+            "hitl_plan_done": "hitl_plan_done",
             "generate_sql": "generate_sql",
             "fail": "fail",
         },
     )
+    g.add_edge("hitl_plan_done", END)
     g.add_conditional_edges(
         "execute_sql",
         nodes.route_after_execute,

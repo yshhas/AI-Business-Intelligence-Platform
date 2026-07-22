@@ -36,6 +36,7 @@ class AnalysisState(TypedDict, total=False):
     link_reason: str | None
     column_count_full: int
     column_count_linked: int
+    hitl_plan_only: bool
 
 
 ExecuteSelectFn = Callable[[str, int], dict[str, Any]]
@@ -79,6 +80,8 @@ class AnalysisContext:
     llm_retry_backoff_max_seconds: float | None = None
     # P1.1 — Worker-injected cooperative abort (no DB access inside agent)
     cancel_check: CancelCheckFn | None = None
+    # HITL H1 — stop after Gate allow; no Data Plane execute
+    hitl_plan_only: bool = False
 
 
 @dataclass

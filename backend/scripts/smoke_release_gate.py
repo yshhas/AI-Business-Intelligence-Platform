@@ -61,6 +61,7 @@ def main() -> None:
         ("smoke_p1_permissions", ["scripts/smoke_p1_permissions.py"]),
         ("smoke_list_tasks_nplus1", ["scripts/smoke_list_tasks_nplus1.py"]),
         ("smoke_result_payload", ["scripts/smoke_result_payload.py"]),
+        ("smoke_hitl_h1", ["scripts/smoke_hitl_h1.py"]),
         ("smoke_e2_explainability", ["scripts/smoke_e2_explainability.py"]),
         ("smoke_m6_artifacts", ["scripts/smoke_m6_artifacts.py"]),
         ("smoke_e3_runtime_essentials", ["scripts/smoke_e3_runtime_essentials.py"]),

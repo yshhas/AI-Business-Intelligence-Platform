@@ -36,6 +36,7 @@ def load_context(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
         "default_limit": ctx.default_limit,
         "status": "running",
         "limitations": [],
+        "hitl_plan_only": bool(ctx.hitl_plan_only),
     }
     _emit(
         sink,
@@ -664,8 +665,42 @@ def route_after_link(state: AnalysisState) -> str:
     return "generate_sql"
 
 
+def hitl_plan_done(
+    state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | None
+) -> AnalysisState:
+    """HITL H1: Gate-allowed SQL snapshot; execution deferred (no plane)."""
+    checkpoint(ctx)
+    sql = state.get("sql_final") or ""
+    lims = list(state.get("limitations") or [])
+    note = "HITL: plan phase complete — awaiting human approval before execute."
+    if note not in lims:
+        lims.append(note)
+    _emit(
+        sink,
+        StepRecord(
+            node_name="hitl_plan_done",
+            status="ok",
+            input_json={"sql_final": sql},
+            output_json={"hitl_plan_only": True, "deferred_execute": True},
+            latency_ms=0,
+        ),
+    )
+    return {
+        **state,
+        "status": "succeeded",
+        "preview": {"columns": [], "rows": [], "row_count": 0},
+        "summary": "SQL awaiting human approval (HITL plan phase).",
+        "charts": [],
+        "report": None,
+        "limitations": lims,
+        "error": "",
+    }
+
+
 def route_after_validate(state: AnalysisState) -> str:
     if state.get("gate_ok"):
+        if state.get("hitl_plan_only"):
+            return "hitl_plan_done"
         return "execute_sql"
     max_retries = int(state.get("max_retries") or 0)
     retry = int(state.get("retry_count") or 0)

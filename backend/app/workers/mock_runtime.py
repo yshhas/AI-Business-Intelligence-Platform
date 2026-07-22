@@ -22,11 +22,86 @@ def run_mock_analysis(
 ) -> dict[str, Any]:
     """Write mock steps and return result_json contract (Phase 5 charts/report placeholders)."""
     from agent.run_control import RunAborted
+    from app.core.config import get_settings
 
     dataset = db.get(Dataset, task.dataset_id)
     dataset_name = dataset.name if dataset else str(task.dataset_id)
     schema_cols = (dataset.schema_json if dataset else []) or []
     task_id: UUID = task.id
+    settings = get_settings()
+    skill_id = (task.skill_id or "data.bi").strip() or "data.bi"
+    hitl_plan = bool(
+        settings.hitl_sql_approval_enabled
+        and task.require_sql_approval
+        and skill_id == "data.bi"
+    )
+
+    if hitl_plan:
+        # H1: plan-only mock — no charts/report execute fiction; park for approval
+        table = (dataset.duckdb_table if dataset else "t") or "t"
+        fake_sql = f'SELECT 1 AS hitl_plan FROM "{table}" LIMIT 10'
+        for idx, (node_name, inp, out) in enumerate(
+            [
+                (
+                    "load_context",
+                    {"dataset_id": str(task.dataset_id), "question": task.question},
+                    {"hitl_plan_only": True},
+                ),
+                (
+                    "validate_sql",
+                    {"sql_draft": fake_sql},
+                    {"sql_final": fake_sql, "policy_id": "sql.select_gate"},
+                ),
+                (
+                    "hitl_plan_done",
+                    {"sql_final": fake_sql},
+                    {"deferred_execute": True},
+                ),
+            ],
+            start=1,
+        ):
+            if cancel_check is not None:
+                cancel_check()
+            if not write_allowed(db, task_id, token):
+                raise RunAborted("cancelled")
+            t0 = time.perf_counter()
+            time.sleep(0.05)
+            latency = int((time.perf_counter() - t0) * 1000)
+            db.add(
+                AgentRunStep(
+                    task_id=task.id,
+                    step_no=idx,
+                    node_name=node_name,
+                    status="ok",
+                    input_json=inp,
+                    output_json=out,
+                    latency_ms=latency,
+                )
+            )
+            db.flush()
+        if cancel_check is not None:
+            cancel_check()
+        if not write_allowed(db, task_id, token):
+            raise RunAborted("cancelled")
+        return {
+            "summary": "SQL awaiting human approval (HITL plan phase).",
+            "sql": fake_sql,
+            "table_preview": {"columns": [], "rows": [], "row_count": 0},
+            "charts": [],
+            "report": None,
+            "limitations": [
+                "HITL: plan phase complete — awaiting human approval before execute.",
+                "Mock HITL plan — no Data Plane execute.",
+            ],
+            "mock": True,
+            "platform": {
+                "skill_id": skill_id,
+                "artifact_types": ["sql"],
+                "tool_ids": ["sql.validate_policy"],
+                "policy_ids": ["sql.select_gate"],
+            },
+            "task_id": str(task.id),
+        }
 
     steps_spec: list[tuple[str, dict[str, Any], dict[str, Any]]] = [
         (

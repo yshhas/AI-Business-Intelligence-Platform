@@ -55,6 +55,11 @@ def run_agent_analysis(
     schema = list(dataset.schema_json or [])
     default_limit = settings.sql_default_limit
     skill_id = (task.skill_id or "data.bi").strip() or "data.bi"
+    hitl_plan_only = bool(
+        settings.hitl_sql_approval_enabled
+        and task.require_sql_approval
+        and skill_id == "data.bi"
+    )
 
     try:
         allowed = dataset_service.allowed_tables_for(
@@ -145,6 +150,7 @@ def run_agent_analysis(
         llm_retry_backoff_seconds=settings.llm_retry_backoff_seconds,
         llm_retry_backoff_max_seconds=settings.llm_retry_backoff_max_seconds,
         cancel_check=cancel_check,
+        hitl_plan_only=hitl_plan_only,
     )
 
     try:
@@ -210,7 +216,12 @@ def run_agent_analysis(
             platform["skill_version"] = meta.version
     result["platform"] = platform
 
-    if outcome.success and settings.workspace_memory_enabled and skill_id == "data.bi":
+    if (
+        outcome.success
+        and settings.workspace_memory_enabled
+        and skill_id == "data.bi"
+        and not hitl_plan_only
+    ):
         if write_allowed(db, task.id, token):
             try:
                 from app.services import workspace_memory as wmem

@@ -35,6 +35,60 @@ logger = logging.getLogger(__name__)
 _ABORT_GRACE_SECONDS = 0.25
 
 
+def _should_park_hitl(task: AnalysisTask, settings) -> bool:
+    skill = (task.skill_id or "data.bi").strip() or "data.bi"
+    return bool(
+        settings.hitl_sql_approval_enabled
+        and task.require_sql_approval
+        and skill == "data.bi"
+    )
+
+
+def _mark_awaiting_approval(db, task: AnalysisTask, result_json: dict[str, Any] | None) -> None:
+    """HITL H1: park after plan — fence closed via status≠running."""
+    import hashlib
+
+    now = datetime.now(UTC)
+    base = dict(result_json or {})
+    sql = base.get("sql")
+    sql_text = sql if isinstance(sql, str) else ""
+    sql_sha = (
+        hashlib.sha256(sql_text.encode("utf-8")).hexdigest() if sql_text else None
+    )
+    platform = dict(base.get("platform") or {})
+    platform["hitl"] = {
+        "required": True,
+        "phase": "awaiting",
+        "sql_sha256": sql_sha,
+    }
+    base["platform"] = platform
+    task.status = rl.STATUS_AWAITING_APPROVAL
+    task.failure_class = None
+    task.error_message = None
+    task.finished_at = None
+    task.approval_requested_at = now
+    task.result_json = rl.attach_run_platform(
+        base,
+        status=rl.STATUS_AWAITING_APPROVAL,
+        failure_class=None,
+        cancel_requested=bool(task.cancel_requested),
+        timeout_seconds=task.timeout_seconds,
+        task_id=str(task.id),
+    )
+    # Soft seal for Trace columns without treating as terminal success
+    rl.apply_trace_columns(task, task.result_json)
+    db.add(task)
+    db.commit()
+    log_run(
+        logger,
+        logging.INFO,
+        "awaiting_approval (HITL plan parked)",
+        run_id=task.id,
+        status=rl.STATUS_AWAITING_APPROVAL,
+        skill_id=task.skill_id,
+    )
+
+
 def _finalize_tokens(db, task: AnalysisTask) -> None:
     """P0-2: denormalize step LLM usage onto task.llm_total_tokens (soft budget index)."""
     try:
@@ -60,6 +114,11 @@ def process_task(task_id: UUID) -> None:
         except Exception:  # noqa: BLE001
             db.rollback()
             logger.exception("stale reclaim failed")
+        try:
+            rt.expire_awaiting_approval(db, settings)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            logger.exception("awaiting_approval expire failed")
 
         task = db.get(AnalysisTask, task_id)
         if task is None:
@@ -237,6 +296,10 @@ def process_task(task_id: UUID) -> None:
                 task.result_json = base
                 # Trace columns applied inside cancel marker after attach
             _mark_cancelled(db, task, "Run cancelled")
+            return
+
+        if _should_park_hitl(task, settings):
+            _mark_awaiting_approval(db, task, result_json)
             return
 
         task.result_json = rl.attach_run_platform(
@@ -548,9 +611,10 @@ def run_forever() -> None:
             db = SessionLocal()
             try:
                 rt.reclaim_stale_running(db, settings)
+                rt.expire_awaiting_approval(db, settings)
             except Exception:  # noqa: BLE001
                 db.rollback()
-                logger.exception("idle stale reclaim failed")
+                logger.exception("idle reclaim/expire failed")
             finally:
                 db.close()
             continue

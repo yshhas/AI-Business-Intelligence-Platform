@@ -9,6 +9,11 @@ class TaskCreateRequest(BaseModel):
     dataset_id: UUID
     question: str = Field(min_length=1, max_length=4000)
     skill_id: str | None = Field(default=None, max_length=64)
+    require_sql_approval: bool = False
+
+
+class TaskRejectRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 class TaskOut(BaseModel):
@@ -28,6 +33,8 @@ class TaskOut(BaseModel):
     source_type: str | None = None
     policy_denied: bool = False
     llm_total_tokens: int | None = None
+    require_sql_approval: bool = False
+    approval_requested_at: datetime | None = None
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None

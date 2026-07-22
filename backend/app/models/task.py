@@ -49,6 +49,13 @@ class AnalysisTask(Base):
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # HITL H1 — opt-in SQL approval pause (Approve→Execute is H2)
+    require_sql_approval: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    approval_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     workspace: Mapped["Workspace"] = relationship(back_populates="analysis_tasks")
     dataset: Mapped["Dataset"] = relationship(back_populates="analysis_tasks")

@@ -124,6 +124,9 @@ class Settings(BaseSettings):
     result_json_max_bytes: int = 256 * 1024
     table_preview_hot_max_rows: int = 50
 
+    # HITL H1 — SQL approval pause kill-switch (Approve→Execute is H2)
+    hitl_sql_approval_enabled: bool = False
+
     # T-10 — SSE task progress (DB poll; not LLM token stream)
     task_sse_poll_seconds: float = 0.5
     task_sse_heartbeat_seconds: float = 5.0

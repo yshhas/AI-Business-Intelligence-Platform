@@ -90,6 +90,7 @@ def context_to_run_request(ctx: AnalysisContext) -> RunRequest:
             "llm_max_retries": ctx.llm_max_retries,
             "llm_retry_backoff_seconds": ctx.llm_retry_backoff_seconds,
             "llm_retry_backoff_max_seconds": ctx.llm_retry_backoff_max_seconds,
+            "hitl_plan_only": bool(ctx.hitl_plan_only),
         },
         execute_select=ctx.execute_select,
         schema=list(ctx.schema or []),

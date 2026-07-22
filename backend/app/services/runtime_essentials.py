@@ -26,10 +26,11 @@ class CapacityError(Exception):
 
 
 def count_running(db: Session) -> int:
+    """In-flight Runs: running ∪ awaiting_approval (HITL H1 / R5)."""
     return int(
         db.scalar(
             select(func.count()).select_from(AnalysisTask).where(
-                AnalysisTask.status == "running"
+                AnalysisTask.status.in_(("running", rl.STATUS_AWAITING_APPROVAL))
             )
         )
         or 0
@@ -69,6 +70,75 @@ def stale_cutoff(settings: Settings | None = None) -> datetime:
         # Default: timeout + grace (never shorter than run_timeout)
         ttl = max(int(settings.run_timeout_seconds) + 60, 180)
     return datetime.now(UTC) - timedelta(seconds=ttl)
+
+
+def expire_awaiting_approval(db: Session, settings: Settings | None = None) -> int:
+    """HITL H1 / R1: wall-clock timeout for awaiting_approval (Worker-loop sweeper).
+
+    Uses started_at + timeout_seconds (task or settings). Never runtime_reclaimed.
+    """
+    settings = settings or get_settings()
+    default_timeout = max(1, int(settings.run_timeout_seconds or 120))
+    now = datetime.now(UTC)
+    stmt = select(AnalysisTask).where(
+        AnalysisTask.status == rl.STATUS_AWAITING_APPROVAL
+    )
+    tasks = list(db.scalars(stmt).all())
+    expired = 0
+    for task in tasks:
+        anchor = task.started_at or task.approval_requested_at or task.created_at
+        if anchor is None:
+            continue
+        if anchor.tzinfo is None:
+            anchor = anchor.replace(tzinfo=UTC)
+        timeout = int(task.timeout_seconds or default_timeout)
+        if timeout <= 0:
+            timeout = default_timeout
+        if now <= anchor + timedelta(seconds=timeout):
+            continue
+        _mark_awaiting_timed_out(db, task, timeout)
+        expired += 1
+    if expired:
+        db.commit()
+        logger.info("Expired %s awaiting_approval Run(s) → timed_out", expired)
+    return expired
+
+
+def _mark_awaiting_timed_out(db: Session, task: AnalysisTask, timeout: int) -> None:
+    task.status = "timed_out"
+    task.failure_class = rl.FAILURE_TIMEOUT
+    task.error_message = f"Run timed out while awaiting SQL approval ({timeout}s)"
+    task.finished_at = datetime.now(UTC)
+    base = dict(task.result_json or {})
+    lims = list(base.get("limitations") or [])
+    for note in rl.TIMEOUT_LIMITATIONS:
+        if note not in lims:
+            lims.append(note)
+    wait_note = "HITL: timed out while awaiting_approval (no Data Plane execute)."
+    if wait_note not in lims:
+        lims.append(wait_note)
+    base["limitations"] = lims
+    task.result_json = rl.attach_run_platform(
+        base,
+        status="timed_out",
+        failure_class=rl.FAILURE_TIMEOUT,
+        cancel_requested=bool(task.cancel_requested),
+        timeout_seconds=task.timeout_seconds,
+        task_id=str(task.id),
+    )
+    platform = dict(task.result_json.get("platform") or {})
+    hitl = dict(platform.get("hitl") or {})
+    hitl.update(
+        {
+            "required": True,
+            "phase": "timed_out",
+            "decision": "timeout",
+        }
+    )
+    platform["hitl"] = hitl
+    task.result_json = {**task.result_json, "platform": platform}
+    rl.apply_trace_columns(task, task.result_json)
+    db.add(task)
 
 
 def reclaim_stale_running(db: Session, settings: Settings | None = None) -> int:

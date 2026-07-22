@@ -26,6 +26,17 @@ from app.services.skill_lifecycle import SkillLifecycleError
 logger = logging.getLogger(__name__)
 
 
+def _resolve_require_sql_approval(
+    settings, *, skill_id: str, requested: bool
+) -> bool:
+    """Kill-switch off or non-data.bi → always False (L3 / L9)."""
+    if not bool(getattr(settings, "hitl_sql_approval_enabled", False)):
+        return False
+    if (skill_id or "").strip() != "data.bi":
+        return False
+    return bool(requested)
+
+
 def _metric_enqueue(result: str) -> None:
     try:
         from app.core.metrics import observe_enqueue
@@ -61,6 +72,7 @@ def create_task(
     member: object | None = None,
     skill_id: str | None = None,
     idempotency_key: str | None = None,
+    require_sql_approval: bool = False,
 ) -> AnalysisTask:
     from app.services import idempotency as idem
 
@@ -240,6 +252,9 @@ def create_task(
         timeout_seconds=settings.run_timeout_seconds,
         skill_id=skill_id,
         skill_version=skill_version,
+        require_sql_approval=_resolve_require_sql_approval(
+            settings, skill_id=skill_id, requested=require_sql_approval
+        ),
     )
     db.add(task)
     db.commit()
@@ -510,6 +525,36 @@ def cancel_task(
             timeout_seconds=task.timeout_seconds,
             task_id=str(task.id),
         )
+    elif task.status == rl.STATUS_AWAITING_APPROVAL:
+        # H1 / R3: API CAS terminal from wait (no plane)
+        task.cancel_requested = True
+        task.status = "cancelled"
+        task.failure_class = rl.FAILURE_CANCELLED
+        task.error_message = "Run cancelled while awaiting SQL approval"
+        task.finished_at = now
+        base = dict(task.result_json or {})
+        lims = list(base.get("limitations") or [])
+        for note in rl.CANCEL_LIMITATIONS:
+            if note not in lims:
+                lims.append(note)
+        wait_note = "HITL: cancelled while awaiting_approval (no Data Plane execute)."
+        if wait_note not in lims:
+            lims.append(wait_note)
+        base["limitations"] = lims
+        task.result_json = rl.attach_run_platform(
+            base,
+            status="cancelled",
+            failure_class=rl.FAILURE_CANCELLED,
+            cancel_requested=True,
+            timeout_seconds=task.timeout_seconds,
+            task_id=str(task.id),
+        )
+        platform = dict(task.result_json.get("platform") or {})
+        hitl = dict(platform.get("hitl") or {})
+        hitl.update({"required": True, "phase": "cancelled", "decision": "cancelled"})
+        platform["hitl"] = hitl
+        task.result_json = {**task.result_json, "platform": platform}
+        rl.apply_trace_columns(task, task.result_json)
     else:
         # running — cooperative cancel
         task.cancel_requested = True
@@ -532,7 +577,98 @@ def cancel_task(
     log_run(
         logger,
         logging.INFO,
-        "cancelled before start",
+        "cancelled",
+        run_id=task.id,
+        status=task.status,
+        failure_class=task.failure_class,
+    )
+    return task
+
+
+def reject_task(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    task_id: UUID,
+    user_id: UUID,
+    member_role: str,
+    member: object | None = None,
+    reason: str | None = None,
+) -> AnalysisTask:
+    """HITL H1: reject while awaiting_approval → failed / hitl_rejected (R3 API CAS)."""
+    settings = get_settings()
+    if not settings.hitl_sql_approval_enabled:
+        raise TaskServiceError(
+            "HITL SQL approval is disabled",
+            status_code=409,
+        )
+
+    task = get_task(db, workspace_id=workspace_id, task_id=task_id)
+    if task is None:
+        raise TaskServiceError("Task not found", status_code=404)
+
+    workspace = db.get(Workspace, workspace_id)
+    actor = member
+    if actor is None:
+        actor = type("M", (), {"role": member_role})()
+    try:
+        # Same bar as cancel (creator or owner)
+        perm.require(
+            actor,  # type: ignore[arg-type]
+            perm.RUN_CANCEL,
+            task=task,
+            workspace=workspace,
+            user_id=user_id,
+        )
+    except PermissionError as exc:
+        raise TaskServiceError(str(exc), status_code=exc.status_code) from exc
+
+    if task.status != rl.STATUS_AWAITING_APPROVAL:
+        raise TaskServiceError(
+            f"Cannot reject run in status={task.status}",
+            status_code=409,
+        )
+
+    now = datetime.now(UTC)
+    detail = (reason or "").strip() or "SQL approval rejected"
+    task.status = "failed"
+    task.failure_class = rl.FAILURE_HITL_REJECTED
+    task.error_message = detail[:2000]
+    task.finished_at = now
+    base = dict(task.result_json or {})
+    lims = list(base.get("limitations") or [])
+    note = "HITL: rejected while awaiting_approval (no Data Plane execute)."
+    if note not in lims:
+        lims.append(note)
+    base["limitations"] = lims
+    task.result_json = rl.attach_run_platform(
+        base,
+        status="failed",
+        failure_class=rl.FAILURE_HITL_REJECTED,
+        cancel_requested=bool(task.cancel_requested),
+        timeout_seconds=task.timeout_seconds,
+        task_id=str(task.id),
+    )
+    platform = dict(task.result_json.get("platform") or {})
+    hitl = dict(platform.get("hitl") or {})
+    hitl.update(
+        {
+            "required": True,
+            "phase": "rejected",
+            "decision": "rejected",
+            "reason": detail[:500],
+        }
+    )
+    platform["hitl"] = hitl
+    task.result_json = {**task.result_json, "platform": platform}
+    rl.apply_trace_columns(task, task.result_json)
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    log_run(
+        logger,
+        logging.INFO,
+        "hitl_rejected",
         run_id=task.id,
         status=task.status,
         failure_class=task.failure_class,

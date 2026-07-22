@@ -48,8 +48,13 @@ def run_data_bi_skill(request: RunRequest) -> RunResult:
     inp = request.input or {}
 
     inner = request.execute_select
+    hitl_plan_only = bool(hints.get("hitl_plan_only"))
 
     def execute_select(sql: str, limit: int) -> dict[str, Any]:
+        if hitl_plan_only:
+            raise RuntimeError(
+                "HITL plan mode: Data Plane execute is forbidden until approve (H2)"
+            )
         if request.cancel_check is not None:
             request.cancel_check()
         return tool_execute_select(
@@ -97,6 +102,7 @@ def run_data_bi_skill(request: RunRequest) -> RunResult:
             else None
         ),
         cancel_check=request.cancel_check,
+        hitl_plan_only=hitl_plan_only,
     )
 
     def sink(step: StepRecord) -> None:

@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled", "timed_out"})
-ACTIVE_STATUSES = frozenset({"pending", "running"})
+ACTIVE_STATUSES = frozenset({"pending", "running", "awaiting_approval"})
+
+STATUS_AWAITING_APPROVAL = "awaiting_approval"
 
 FAILURE_ENQUEUE = "enqueue_error"
 FAILURE_CAPACITY = "capacity_rejected"
@@ -16,6 +18,7 @@ FAILURE_SKILL = "skill_error"
 FAILURE_TIMEOUT = "timeout"
 FAILURE_CANCELLED = "cancelled"
 FAILURE_RUNTIME_RECLAIMED = "runtime_reclaimed"
+FAILURE_HITL_REJECTED = "hitl_rejected"
 FAILURE_INTERNAL = "internal_error"
 FAILURE_UNKNOWN = "unknown"
 
