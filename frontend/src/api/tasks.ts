@@ -3,7 +3,7 @@ import type { ArtifactList, ExecutionTrace, RunArtifact, StepList, Task, TaskLis
 
 export function createTask(
   workspaceId: string,
-  body: { dataset_id: string; question: string },
+  body: { dataset_id: string; question: string; skill_id?: string },
 ): Promise<Task> {
   return apiRequest<Task>(`/api/v1/workspaces/${workspaceId}/tasks`, {
     method: 'POST',

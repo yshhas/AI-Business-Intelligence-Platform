@@ -317,11 +317,12 @@ def preview_dataset(
     try:
         if dataset.source_type == "postgres_ro":
             allowed = allowed_tables_for(dataset)
-            return postgres_ro_service.preview_table(
+            raw = postgres_ro_service.preview_table(
                 primary_table=dataset.duckdb_table,
                 allowed_tables=allowed,
                 limit=limit,
             )
+            return _apply_preview_guardrails(raw)
         if dataset.source_type == "mysql_ro":
             from app.services import mysql_ro_service
 
@@ -339,21 +340,24 @@ def preview_dataset(
                 dict_rows = rows
             else:
                 dict_rows = [dict(zip(cols, r, strict=False)) for r in rows]
-            return {
-                "columns": cols,
-                "rows": dict_rows,
-                "row_count": len(dict_rows),
-            }
+            return _apply_preview_guardrails(
+                {
+                    "columns": cols,
+                    "rows": dict_rows,
+                    "row_count": len(dict_rows),
+                }
+            )
         if dataset.source_type != "file":
             raise DatasetServiceError(
                 f"Unsupported source_type={dataset.source_type!r}",
                 status_code=400,
             )
-        return duckdb_service.preview_table(
+        raw = duckdb_service.preview_table(
             workspace_id=workspace_id,
             table_name=dataset.duckdb_table,
             limit=limit,
         )
+        return _apply_preview_guardrails(raw)
     except ConnectorError as exc:
         raise DatasetServiceError(str(exc), status_code=400) from exc
     except Exception as exc:  # noqa: BLE001
@@ -364,3 +368,16 @@ def preview_dataset(
         if isinstance(exc, DuckDBServiceError):
             raise DatasetServiceError(str(exc), status_code=400) from exc
         raise
+
+
+def _apply_preview_guardrails(data: dict) -> dict:
+    """P1.7: same string redaction as Facade table_preview (not Policy Gate)."""
+    try:
+        from app.core.repo_path import ensure_repo_root_on_path
+
+        ensure_repo_root_on_path()
+        from agent.guardrails import redact_preview_payload
+
+        return redact_preview_payload(data)
+    except Exception:  # noqa: BLE001 — preview must not fail closed on guardrails import
+        return data

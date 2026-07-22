@@ -63,6 +63,7 @@ function AnalyzePageInner({
   const canRun = role === 'owner' || role === 'analyst'
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [datasetId, setDatasetId] = useState('')
+  const [skillId, setSkillId] = useState<'data.bi' | 'data.profile'>('data.bi')
   const [question, setQuestion] = useState('')
   const [task, setTask] = useState<Task | null>(null)
   const [steps, setSteps] = useState<TaskStep[]>([])
@@ -219,6 +220,7 @@ function AnalyzePageInner({
       const t = await createTask(workspaceId, {
         dataset_id: datasetId,
         question: question.trim(),
+        skill_id: skillId,
       })
       setTask(t)
     } catch (err) {
@@ -279,7 +281,7 @@ function AnalyzePageInner({
       <Card className={!canRun ? 'analyze-command is-disabled' : 'analyze-command'}>
         <CardHeader
           title="Ask a question"
-          description="Select a ready dataset, describe what you need, then start a run."
+          description="Select a ready dataset and skill, describe what you need, then start a run."
         />
         <CardBody>
           <form className="stack" onSubmit={onSubmit}>
@@ -299,12 +301,29 @@ function AnalyzePageInner({
               </Select>
             </label>
             <label className="field">
+              <span className="field-label">Skill</span>
+              <Select
+                value={skillId}
+                onChange={(e) =>
+                  setSkillId(e.target.value === 'data.profile' ? 'data.profile' : 'data.bi')
+                }
+                disabled={!canRun}
+              >
+                <option value="data.bi">data.bi — Text-to-SQL analysis</option>
+                <option value="data.profile">data.profile — Dataset profiling</option>
+              </Select>
+            </label>
+            <label className="field">
               <span className="field-label">Question</span>
               <Textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 rows={4}
-                placeholder="e.g. Rank regions by total sales"
+                placeholder={
+                  skillId === 'data.profile'
+                    ? 'e.g. Profile this dataset'
+                    : 'e.g. Rank regions by total sales'
+                }
                 disabled={!canRun}
               />
             </label>

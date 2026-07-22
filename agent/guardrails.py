@@ -1,6 +1,8 @@
-"""Thin output guardrails (Wave 3) — redact obvious secrets/PII patterns from user-visible text.
+"""Thin output guardrails (Wave 3 + P1.7) — redact secrets/PII patterns from user-visible text.
 
-Not a compliance product: heuristic only; applied on Facade result_json before return.
+Not a compliance product: heuristic only.
+Applied on Facade ``result_json`` and Dataset HTTP preview (same redaction helpers).
+Does **not** replace Policy SQL Gate.
 """
 
 from __future__ import annotations
@@ -22,8 +24,54 @@ def redact_text(text: str) -> str:
     return out
 
 
+def _redact_cell(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact_text(value)
+    return value
+
+
+def redact_table_preview(preview: Any) -> Any:
+    """Redact string cells/column names in a table_preview-like dict.
+
+    Accepts ``{columns, rows}`` where rows are dicts or sequences.
+    Non-dict previews are returned unchanged.
+    """
+    if not isinstance(preview, dict):
+        return preview
+    out = dict(preview)
+    cols = out.get("columns")
+    if isinstance(cols, list):
+        out["columns"] = [
+            redact_text(c) if isinstance(c, str) else c for c in cols
+        ]
+    rows = out.get("rows")
+    if isinstance(rows, list):
+        new_rows: list[Any] = []
+        for row in rows:
+            if isinstance(row, dict):
+                new_rows.append({k: _redact_cell(v) for k, v in row.items()})
+            elif isinstance(row, (list, tuple)):
+                new_rows.append([_redact_cell(v) for v in row])
+            else:
+                new_rows.append(_redact_cell(row))
+        out["rows"] = new_rows
+    return out
+
+
+def redact_preview_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Redact a Dataset preview response ``{columns, rows, row_count?}``."""
+    if not isinstance(data, dict):
+        return data
+    redacted = redact_table_preview(data)
+    if not isinstance(redacted, dict):
+        return data
+    out = dict(data)
+    out.update(redacted)
+    return out
+
+
 def apply_output_guardrails(result_json: dict[str, Any]) -> dict[str, Any]:
-    """Return a shallow-copied result with summary/report strings redacted."""
+    """Return a shallow-copied result with summary/report/preview strings redacted."""
     if not isinstance(result_json, dict):
         return result_json
     out = dict(result_json)
@@ -42,7 +90,13 @@ def apply_output_guardrails(result_json: dict[str, Any]) -> dict[str, Any]:
         out["limitations"] = [
             redact_text(x) if isinstance(x, str) else x for x in limitations
         ]
+    if "table_preview" in out:
+        out["table_preview"] = redact_table_preview(out.get("table_preview"))
     platform = dict(out.get("platform") or {})
-    platform["guardrails"] = {"applied": True, "schema_version": 1}
+    platform["guardrails"] = {
+        "applied": True,
+        "schema_version": 1,
+        "covers": ["summary", "report", "limitations", "table_preview"],
+    }
     out["platform"] = platform
     return out

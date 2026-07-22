@@ -27,3 +27,25 @@ export type Preview = {
   rows: Record<string, unknown>[]
   row_count: number
 }
+
+export type DatasetAclGrant = {
+  user_id: string
+  can_read: boolean
+  can_run: boolean
+  tables?: string[] | null
+}
+
+export type DatasetAclEntry = {
+  id: string
+  workspace_id: string
+  dataset_id: string
+  user_id: string
+  can_read: boolean
+  can_run: boolean
+  tables_json?: string[] | null
+  created_at: string
+}
+
+export type DatasetAclList = {
+  items: DatasetAclEntry[]
+}

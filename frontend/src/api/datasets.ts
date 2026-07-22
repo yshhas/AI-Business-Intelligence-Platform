@@ -1,5 +1,11 @@
 import { apiRequest } from './client'
-import type { Dataset, DatasetList, Preview } from '../types/dataset'
+import type {
+  Dataset,
+  DatasetAclGrant,
+  DatasetAclList,
+  DatasetList,
+  Preview,
+} from '../types/dataset'
 
 export function listDatasets(workspaceId: string): Promise<DatasetList> {
   return apiRequest<DatasetList>(`/api/v1/workspaces/${workspaceId}/datasets`)
@@ -56,4 +62,27 @@ export function bindPostgresRoDataset(
     method: 'POST',
     body,
   })
+}
+
+export function getDatasetAcl(
+  workspaceId: string,
+  datasetId: string,
+): Promise<DatasetAclList> {
+  return apiRequest<DatasetAclList>(
+    `/api/v1/workspaces/${workspaceId}/datasets/${datasetId}/acl`,
+  )
+}
+
+export function putDatasetAcl(
+  workspaceId: string,
+  datasetId: string,
+  grants: DatasetAclGrant[],
+): Promise<DatasetAclList> {
+  return apiRequest<DatasetAclList>(
+    `/api/v1/workspaces/${workspaceId}/datasets/${datasetId}/acl`,
+    {
+      method: 'PUT',
+      body: { grants },
+    },
+  )
 }

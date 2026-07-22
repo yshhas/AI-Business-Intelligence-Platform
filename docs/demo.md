@@ -25,10 +25,12 @@ npm run dev
 
 1. Register / login at http://127.0.0.1:5173  
 2. **Datasets** → upload a CSV with `region` / `product` / `amount` (or `evals/fixtures/file/sales_mini.csv`)  
-3. **Analyze** → question: `按区域汇总销售额并排序` (or English equivalent)  
+3. **Analyze** → pick Skill (`data.bi` or `data.profile`) → question: `按区域汇总销售额并排序` (or English equivalent)  
 4. Wait for SSE progress → task **succeeded**  
 5. Confirm UI shows: SQL · table preview · chart · report · Execution Trace · Artifacts  
-6. Steps should include `link_schema`, `generate_sql`, `validate_sql`, `execute_sql`, `build_charts`, `write_report`
+6. Steps should include `link_schema`, `generate_sql`, `validate_sql`, `execute_sql`, `build_charts`, `write_report`  
+7. Owner (optional): Datasets → ACL panel — empty ACL = default open; grants use member `user_id` UUID  
+8. MySQL RO card is a **disabled placeholder** (API exists; UI does not call it)
 
 ## Golden path B — Postgres RO plane
 
@@ -37,7 +39,11 @@ npm run dev
 3. Analyze a question against the RO dataset  
 4. Illegal SQL / non-allowlist → `failure_class=policy_denied`
 
-## Golden path C — second Skill (API)
+## Golden path C — second Skill
+
+**UI:** Analyze → Skill = `data.profile` → submit.
+
+**API:**
 
 ```http
 POST /api/v1/workspaces/{id}/tasks

@@ -3,8 +3,10 @@ import { Link, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   bindPostgresRoDataset,
+  getDatasetAcl,
   listDatasets,
   previewDataset,
+  putDatasetAcl,
   uploadDataset,
 } from '../api/datasets'
 import { ApiError } from '../api/client'
@@ -26,11 +28,19 @@ import {
   THead,
   TR,
 } from '../components/ui'
-import { getStoredWorkspace } from '../stores/authStore'
-import type { Dataset, Preview } from '../types/dataset'
+import { getStoredUser, getStoredWorkspace } from '../stores/authStore'
+import type { Dataset, DatasetAclGrant, Preview } from '../types/dataset'
+
+type AclDraft = {
+  user_id: string
+  can_read: boolean
+  can_run: boolean
+  tables: string
+}
 
 export function DatasetsPage() {
   const workspace = getStoredWorkspace()
+  const user = getStoredUser()
   if (!workspace?.id) {
     return <Navigate to="/app" replace />
   }
@@ -39,6 +49,7 @@ export function DatasetsPage() {
       workspaceId={workspace.id}
       workspaceName={workspace.name}
       role={workspace.role || 'owner'}
+      defaultUserId={user?.id}
     />
   )
 }
@@ -47,12 +58,15 @@ function DatasetsPageInner({
   workspaceId,
   workspaceName,
   role,
+  defaultUserId,
 }: {
   workspaceId: string
   workspaceName: string
   role: string
+  defaultUserId?: string
 }) {
   const canMutate = role === 'owner' || role === 'analyst'
+  const canManageAcl = role === 'owner'
   const {
     data: listData,
     isLoading: loading,
@@ -72,6 +86,10 @@ function DatasetsPageInner({
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [binding, setBinding] = useState(false)
+  const [aclDrafts, setAclDrafts] = useState<AclDraft[]>([])
+  const [aclLoading, setAclLoading] = useState(false)
+  const [aclSaving, setAclSaving] = useState(false)
+  const [aclNote, setAclNote] = useState<string | null>(null)
 
   const loadError =
     queryError instanceof ApiError || queryError instanceof Error
@@ -133,6 +151,38 @@ function DatasetsPageInner({
     }
   }
 
+  async function loadAcl(ds: Dataset) {
+    if (!canManageAcl) {
+      setAclDrafts([])
+      setAclNote(null)
+      return
+    }
+    setAclLoading(true)
+    setAclNote(null)
+    try {
+      const res = await getDatasetAcl(workspaceId, ds.id)
+      if (res.items.length === 0) {
+        setAclDrafts([])
+        setAclNote('Empty ACL = default open (any workspace member may read).')
+      } else {
+        setAclDrafts(
+          res.items.map((g) => ({
+            user_id: g.user_id,
+            can_read: g.can_read,
+            can_run: g.can_run,
+            tables: (g.tables_json ?? []).join(', '),
+          })),
+        )
+        setAclNote(`${res.items.length} grant(s) — restricted mode.`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ACL load failed')
+      setAclDrafts([])
+    } finally {
+      setAclLoading(false)
+    }
+  }
+
   async function openDataset(ds: Dataset) {
     setSelected(ds)
     setPreview(null)
@@ -142,6 +192,71 @@ function DatasetsPageInner({
       setPreview(p)
     } catch (err) {
       setError(err instanceof ApiError || err instanceof Error ? err.message : 'Preview failed')
+    }
+    await loadAcl(ds)
+  }
+
+  function addAclRow() {
+    setAclDrafts((prev) => [
+      ...prev,
+      {
+        user_id: defaultUserId || '',
+        can_read: true,
+        can_run: false,
+        tables: '',
+      },
+    ])
+  }
+
+  function updateAclRow(index: number, patch: Partial<AclDraft>) {
+    setAclDrafts((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  function removeAclRow(index: number) {
+    setAclDrafts((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  async function saveAcl() {
+    if (!selected || !canManageAcl) return
+    const grants: DatasetAclGrant[] = []
+    for (const row of aclDrafts) {
+      const uid = row.user_id.trim()
+      if (!uid) {
+        setError('Each ACL grant needs a user_id (workspace member UUID).')
+        return
+      }
+      const tables = row.tables
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+      grants.push({
+        user_id: uid,
+        can_read: row.can_read,
+        can_run: row.can_run,
+        tables: tables.length ? tables : null,
+      })
+    }
+    setAclSaving(true)
+    setError(null)
+    try {
+      const res = await putDatasetAcl(workspaceId, selected.id, grants)
+      setAclNote(
+        res.items.length === 0
+          ? 'ACL cleared — default open.'
+          : `Saved ${res.items.length} grant(s).`,
+      )
+      setAclDrafts(
+        res.items.map((g) => ({
+          user_id: g.user_id,
+          can_read: g.can_read,
+          can_run: g.can_run,
+          tables: (g.tables_json ?? []).join(', '),
+        })),
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ACL save failed')
+    } finally {
+      setAclSaving(false)
     }
   }
 
@@ -221,6 +336,23 @@ function DatasetsPageInner({
                   {binding ? 'Binding…' : 'Bind readonly source'}
                 </Button>
               </form>
+            </CardBody>
+          </Card>
+
+          <Card className="is-disabled">
+            <CardHeader
+              title="Bind MySQL (read-only)"
+              description="Planned UI for server MYSQL_RO_DSN binds. Not enabled in this shell build."
+            />
+            <CardBody>
+              <Alert variant="warning">
+                Disabled: MySQL RO bind API exists on the server, but this Product Shell entry is a
+                placeholder only — no client call is made and no fake success is shown. Configure{' '}
+                <code>MYSQL_RO_DSN</code> and use the API/docs until the UI is enabled.
+              </Alert>
+              <Button type="button" disabled>
+                Bind MySQL (unavailable)
+              </Button>
             </CardBody>
           </Card>
         </div>
@@ -342,6 +474,116 @@ function DatasetsPageInner({
                       </Table>
                     )}
                   </div>
+
+                  {canManageAcl ? (
+                    <div className="section-block">
+                      <h3 className="section-block__title">Dataset ACL</h3>
+                      <p className="caption">
+                        Owner-only. Uses existing GET/PUT ACL APIs. Empty grants restore default
+                        open. Optional tables project into SQL Gate allowlist (not a new permission
+                        layer).
+                      </p>
+                      {aclNote ? <p className="caption">{aclNote}</p> : null}
+                      {aclLoading ? (
+                        <p className="caption">Loading ACL…</p>
+                      ) : (
+                        <div className="stack">
+                          {aclDrafts.map((row, index) => (
+                            <div key={index} className="stack-sm" style={{ borderTop: '1px solid var(--border, #ddd)', paddingTop: '0.75rem' }}>
+                              <label className="field">
+                                <span className="field-label">user_id (UUID)</span>
+                                <Input
+                                  value={row.user_id}
+                                  onChange={(e) =>
+                                    updateAclRow(index, { user_id: e.target.value })
+                                  }
+                                  placeholder={defaultUserId || 'member user uuid'}
+                                />
+                              </label>
+                              <label className="field">
+                                <span className="field-label">
+                                  <input
+                                    type="checkbox"
+                                    checked={row.can_read}
+                                    onChange={(e) =>
+                                      updateAclRow(index, { can_read: e.target.checked })
+                                    }
+                                  />{' '}
+                                  can_read
+                                </span>
+                              </label>
+                              <label className="field">
+                                <span className="field-label">
+                                  <input
+                                    type="checkbox"
+                                    checked={row.can_run}
+                                    onChange={(e) =>
+                                      updateAclRow(index, { can_run: e.target.checked })
+                                    }
+                                  />{' '}
+                                  can_run
+                                </span>
+                              </label>
+                              <label className="field">
+                                <span className="field-label">tables (optional, comma-separated)</span>
+                                <Input
+                                  value={row.tables}
+                                  onChange={(e) =>
+                                    updateAclRow(index, { tables: e.target.value })
+                                  }
+                                  placeholder="public.demo_orders"
+                                />
+                              </label>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => removeAclRow(index)}
+                              >
+                                Remove grant
+                              </Button>
+                            </div>
+                          ))}
+                          <div className="analyze-command__actions">
+                            <Button type="button" variant="secondary" onClick={addAclRow}>
+                              Add grant
+                            </Button>
+                            <Button
+                              type="button"
+                              loading={aclSaving}
+                              onClick={() => void saveAcl()}
+                            >
+                              {aclSaving ? 'Saving…' : 'Save ACL'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              disabled={aclSaving}
+                              onClick={() => {
+                                setAclDrafts([])
+                                void (async () => {
+                                  if (!selected) return
+                                  setAclSaving(true)
+                                  try {
+                                    await putDatasetAcl(workspaceId, selected.id, [])
+                                    setAclNote('ACL cleared — default open.')
+                                  } catch (err) {
+                                    setError(
+                                      err instanceof Error ? err.message : 'ACL clear failed',
+                                    )
+                                  } finally {
+                                    setAclSaving(false)
+                                  }
+                                })()
+                              }}
+                            >
+                              Clear ACL
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               )}
             </CardBody>

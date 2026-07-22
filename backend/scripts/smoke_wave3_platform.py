@@ -30,10 +30,28 @@ def main() -> None:
 
     assert "[REDACTED_EMAIL]" in redact_text("contact me@example.com now")
     guarded = apply_output_guardrails(
-        {"summary": "key sk-abcdefghijklmnopqrstuvwxyz12", "report": {"markdown": "a@b.co"}}
+        {
+            "summary": "key sk-abcdefghijklmnopqrstuvwxyz12",
+            "report": {"markdown": "a@b.co"},
+            "table_preview": {
+                "columns": ["email", "note"],
+                "rows": [
+                    {"email": "leak@example.com", "note": "api_key=sk-abcdefghijklmnopqrstuvwxyz99"},
+                    ["ok", "bearer TOKENVALUE12345678"],
+                ],
+            },
+        }
     )
     assert "REDACTED" in guarded["summary"] or "REDACTED" in guarded["report"]["markdown"]
+    tp = guarded["table_preview"]
+    assert "[REDACTED_EMAIL]" in str(tp["rows"][0]["email"])
+    assert "REDACTED" in str(tp["rows"][0]["note"])
+    assert "REDACTED" in str(tp["rows"][1][1])
+    assert guarded.get("platform", {}).get("guardrails", {}).get("applied") is True
+    covers = guarded["platform"]["guardrails"].get("covers") or []
+    assert "table_preview" in covers
     print("GUARDRAILS_OK")
+    print("GUARDRAILS_TABLE_PREVIEW_OK")
 
     # Plane protocol marker
     from agent.data_plane import SUPPORTED_SOURCE_TYPES
