@@ -67,6 +67,8 @@ class RunRequest:
     execute_select: Callable[[str, int], dict[str, Any]] | None = None
     schema: list[dict[str, Any]] = field(default_factory=list)
     duckdb_table: str = ""
+    # P1.1 cooperative abort — Worker callback; raises RunAborted
+    cancel_check: Callable[[], None] | None = None
 
 
 @dataclass

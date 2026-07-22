@@ -4,6 +4,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, TypedDict
 from uuid import UUID
 
+# Optional cooperative abort: () -> None, raises RunAborted when cancel/timeout requested.
+CancelCheckFn = Callable[[], None]
+
 
 class AnalysisState(TypedDict, total=False):
     question: str
@@ -74,6 +77,8 @@ class AnalysisContext:
     llm_max_retries: int | None = None
     llm_retry_backoff_seconds: float | None = None
     llm_retry_backoff_max_seconds: float | None = None
+    # P1.1 — Worker-injected cooperative abort (no DB access inside agent)
+    cancel_check: CancelCheckFn | None = None
 
 
 @dataclass

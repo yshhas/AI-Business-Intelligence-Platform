@@ -9,6 +9,7 @@ from agent.gates.sql_gate import validate_and_normalize_sql
 from agent.llm import LLMError, chat_completion_result
 from agent.prompts_sql import PROMPT_SQL_VERSION, build_text_to_sql_prompts
 from agent.repair_classify import classify_repair_error
+from agent.run_control import checkpoint
 from agent.schema_linking import filter_schema_by_columns, link_schema as run_link_schema
 from agent.schemas_llm import parse_sql_draft
 from agent.state import AnalysisContext, AnalysisState, StepRecord
@@ -22,6 +23,7 @@ def _emit(sink: StepSink | None, record: StepRecord) -> None:
 
 
 def load_context(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | None) -> AnalysisState:
+    checkpoint(ctx)
     t0 = time.perf_counter()
     out = {
         "question": ctx.question,
@@ -53,6 +55,7 @@ def load_context(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
 
 def link_schema(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | None) -> AnalysisState:
     """E1-A: deterministic schema linking — always emits an observable step."""
+    checkpoint(ctx)
     t0 = time.perf_counter()
     table = state.get("duckdb_table") or ctx.duckdb_table
     schema = state.get("schema") or ctx.schema
@@ -107,6 +110,7 @@ def link_schema(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | 
 
 
 def generate_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | None) -> AnalysisState:
+    checkpoint(ctx)
     t0 = time.perf_counter()
     table = state.get("duckdb_table") or ctx.duckdb_table
     full_schema = state.get("schema") or ctx.schema
@@ -168,6 +172,7 @@ def generate_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
 
 
 def validate_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | None) -> AnalysisState:
+    checkpoint(ctx)
     t0 = time.perf_counter()
     draft = state.get("sql_draft") or ""
     table = state.get("duckdb_table") or ctx.duckdb_table
@@ -219,6 +224,7 @@ def validate_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
 
 
 def execute_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | None) -> AnalysisState:
+    checkpoint(ctx)
     t0 = time.perf_counter()
     sql = state.get("sql_final") or ""
     limit = int(state.get("default_limit") or ctx.default_limit)
@@ -264,6 +270,7 @@ def execute_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | 
 
 
 def summarize(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | None) -> AnalysisState:
+    checkpoint(ctx)
     t0 = time.perf_counter()
     preview = state.get("preview") or {}
     sql = state.get("sql_final") or ""
@@ -307,6 +314,7 @@ def summarize(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | No
 
 def build_charts(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | None) -> AnalysisState:
     """Heuristic ChartSpec only — never asks LLM for executable chart structure."""
+    checkpoint(ctx)
     from agent.charts import build_charts_from_preview, enhance_chart_copy
     from agent.contracts import validate_charts
 
@@ -368,6 +376,7 @@ def build_charts(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
 
 
 def write_report(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | None) -> AnalysisState:
+    checkpoint(ctx)
     from agent.report import build_report
 
     t0 = time.perf_counter()

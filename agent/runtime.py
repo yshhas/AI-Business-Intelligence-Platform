@@ -94,6 +94,7 @@ def context_to_run_request(ctx: AnalysisContext) -> RunRequest:
         execute_select=ctx.execute_select,
         schema=list(ctx.schema or []),
         duckdb_table=ctx.duckdb_table,
+        cancel_check=ctx.cancel_check,
     )
 
 

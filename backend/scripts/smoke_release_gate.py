@@ -55,6 +55,7 @@ def main() -> None:
         ("smoke_task_events", ["scripts/smoke_task_events.py"]),
         ("smoke_docker_compose", ["scripts/smoke_docker_compose.py"]),
         ("smoke_m2_lifecycle", ["scripts/smoke_m2_lifecycle.py"]),
+        ("smoke_p1_1_cooperative_cancel", ["scripts/smoke_p1_1_cooperative_cancel.py"]),
         ("smoke_m4_execution_trace", ["scripts/smoke_m4_execution_trace.py"]),
         ("smoke_m5_permissions", ["scripts/smoke_m5_permissions.py"]),
         ("smoke_p1_permissions", ["scripts/smoke_p1_permissions.py"]),

@@ -161,6 +161,22 @@ def assert_boot_security(settings: Settings | None = None) -> None:
         )
 
 
+def assert_boot_runtime(settings: Settings | None = None) -> None:
+    """Validate ANALYSIS_RUNTIME; reject mock in production/staging."""
+    cfg = settings or get_settings()
+    runtime = (cfg.analysis_runtime or "").strip().lower()
+    if runtime not in {"mock", "agent"}:
+        raise RuntimeError(
+            f"Refusing to start: ANALYSIS_RUNTIME={cfg.analysis_runtime!r} "
+            "is not supported (allowed: mock | agent)."
+        )
+    if cfg.is_hardened_env() and runtime == "mock":
+        raise RuntimeError(
+            f"Refusing to start: ANALYSIS_RUNTIME=mock is not allowed for "
+            f"APP_ENV={cfg.app_env!r}. Set ANALYSIS_RUNTIME=agent."
+        )
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

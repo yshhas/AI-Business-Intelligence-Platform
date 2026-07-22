@@ -99,9 +99,9 @@ def main() -> None:
 
         orig = worker_mod.run_mock_analysis
 
-        def slow_mock(db_sess, t):
+        def slow_mock(db_sess, t, **kwargs):
             time.sleep(3)
-            return orig(db_sess, t)
+            return orig(db_sess, t, **kwargs)
 
         worker_mod.run_mock_analysis = slow_mock  # type: ignore[assignment]
         from app.core import config as cfg

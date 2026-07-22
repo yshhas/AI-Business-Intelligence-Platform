@@ -3,18 +3,30 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.models import AgentRunStep, AnalysisTask, Dataset
+from app.workers.write_fence import write_allowed
 
 
-def run_mock_analysis(db: Session, task: AnalysisTask) -> dict[str, Any]:
+def run_mock_analysis(
+    db: Session,
+    task: AnalysisTask,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    token: Any | None = None,
+) -> dict[str, Any]:
     """Write mock steps and return result_json contract (Phase 5 charts/report placeholders)."""
+    from agent.run_control import RunAborted
+
     dataset = db.get(Dataset, task.dataset_id)
     dataset_name = dataset.name if dataset else str(task.dataset_id)
     schema_cols = (dataset.schema_json if dataset else []) or []
+    task_id: UUID = task.id
 
     steps_spec: list[tuple[str, dict[str, Any], dict[str, Any]]] = [
         (
@@ -52,9 +64,15 @@ def run_mock_analysis(db: Session, task: AnalysisTask) -> dict[str, Any]:
     ]
 
     for idx, (node_name, inp, out) in enumerate(steps_spec, start=1):
+        if cancel_check is not None:
+            cancel_check()
+        if not write_allowed(db, task_id, token):
+            raise RunAborted("cancelled")
         t0 = time.perf_counter()
         time.sleep(0.15)
         latency = int((time.perf_counter() - t0) * 1000)
+        if not write_allowed(db, task_id, token):
+            raise RunAborted("cancelled")
         db.add(
             AgentRunStep(
                 task_id=task.id,
@@ -67,6 +85,11 @@ def run_mock_analysis(db: Session, task: AnalysisTask) -> dict[str, Any]:
             )
         )
         db.flush()
+
+    if cancel_check is not None:
+        cancel_check()
+    if not write_allowed(db, task_id, token):
+        raise RunAborted("cancelled")
 
     preview_cols = [c.get("name", "") for c in schema_cols[:8] if isinstance(c, dict)]
     # Placeholder bar chart so frontend can exercise the same renderer as agent path.

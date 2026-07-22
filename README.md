@@ -124,7 +124,8 @@ npm run dev
 
 ## 配置要点
 
-- `ANALYSIS_RUNTIME=agent`（演示/企业路径；默认 `mock` 仅本地骨架）  
+- `ANALYSIS_RUNTIME=agent`（演示/企业路径；代码默认 `mock` 仅本地骨架）  
+- **production / staging** 启动时拒绝 `ANALYSIS_RUNTIME=mock`（P1.6）  
 - `POSTGRES_RO_DSN` / 可选 `MYSQL_RO_DSN` 与 `DATABASE_URL` **分离**  
 - `SKILL_DATA_BI_*` / `SKILL_DATA_PROFILE_*` Lifecycle  
 - OIDC 默认关闭；生产需强 `JWT_SECRET`

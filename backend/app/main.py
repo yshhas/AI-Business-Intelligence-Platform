@@ -7,7 +7,7 @@ from app.api.routes_health import router as health_router
 from app.api.routes_mcp import router as mcp_router
 from app.api.routes_tasks import router as tasks_router
 from app.api.routes_workspaces import router as workspaces_router
-from app.core.config import assert_boot_security, get_settings
+from app.core.config import assert_boot_runtime, assert_boot_security, get_settings
 from app.core.observability import configure_api_logging
 from app.middleware.request_id import RequestIdMiddleware
 from app.services import skill_lifecycle as skills
@@ -16,6 +16,7 @@ from app.services import skill_lifecycle as skills
 def create_app() -> FastAPI:
     settings = get_settings()
     assert_boot_security(settings)
+    assert_boot_runtime(settings)
     configure_api_logging(log_format=settings.log_format, log_level=settings.log_level)
     try:
         skills.sync_from_settings(settings)

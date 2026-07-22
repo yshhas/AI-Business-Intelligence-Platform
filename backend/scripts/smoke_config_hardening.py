@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from app.core.config import (  # noqa: E402
     WEAK_JWT_SECRETS,
     Settings,
+    assert_boot_runtime,
     assert_boot_security,
     get_settings,
 )
@@ -48,9 +49,31 @@ def main() -> None:
         app_env="production",
         jwt_secret=strong,
         allow_heuristic_sql=True,
+        analysis_runtime="agent",
     )
     assert prod_ok.allow_heuristic_sql is False
     assert_boot_security(prod_ok)
+    assert_boot_runtime(prod_ok)
+
+    # P1.6: mock forbidden in production/staging
+    prod_mock = Settings(
+        app_env="production",
+        jwt_secret=strong,
+        analysis_runtime="mock",
+    )
+    try:
+        assert_boot_runtime(prod_mock)
+        raise SystemExit("expected RuntimeError for ANALYSIS_RUNTIME=mock in production")
+    except RuntimeError as exc:
+        assert "ANALYSIS_RUNTIME" in str(exc)
+
+    # Development may use mock
+    assert_boot_runtime(
+        Settings(app_env="development", analysis_runtime="mock", jwt_secret="x")
+    )
+    assert_boot_runtime(
+        Settings(app_env="development", analysis_runtime="agent", jwt_secret="x")
+    )
 
     # CORS parsing
     s = Settings(cors_origins="http://a.example, http://b.example")

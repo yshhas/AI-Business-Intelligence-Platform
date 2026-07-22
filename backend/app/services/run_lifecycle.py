@@ -20,13 +20,13 @@ FAILURE_INTERNAL = "internal_error"
 FAILURE_UNKNOWN = "unknown"
 
 TIMEOUT_LIMITATIONS = [
-    "Run timed out (wall-clock budget). Cooperative timeout does not guarantee "
-    "immediate abort of in-flight LLM HTTP or DuckDB queries.",
+    "Run timed out (wall-clock budget). New Skill checkpoints stop after the signal; "
+    "in-flight LLM HTTP or SQL queries may still finish but success/memory writes are fenced.",
 ]
 
 CANCEL_LIMITATIONS = [
-    "Run cancelled. Cooperative cancel does not guarantee immediate abort of "
-    "in-flight LLM HTTP or DuckDB queries.",
+    "Run cancelled. New Skill checkpoints stop after the signal; "
+    "in-flight LLM HTTP or SQL queries may still finish but success/memory writes are fenced.",
 ]
 
 

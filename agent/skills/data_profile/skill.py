@@ -58,6 +58,8 @@ def run_data_profile_skill(request: RunRequest) -> RunResult:
     inner = request.execute_select
 
     def execute_select(sql: str, limit: int) -> dict[str, Any]:
+        if request.cancel_check is not None:
+            request.cancel_check()
         return tool_execute_select(
             sql,
             limit,
@@ -67,6 +69,9 @@ def run_data_profile_skill(request: RunRequest) -> RunResult:
             tool_calls=tool_calls,
             policy_decisions=policy_decisions,
         )
+
+    if request.cancel_check is not None:
+        request.cancel_check()
 
     # --- load_context ---
     steps.append(
@@ -103,6 +108,8 @@ def run_data_profile_skill(request: RunRequest) -> RunResult:
     profiles: list[dict[str, Any]] = []
     errors: list[str] = []
     for col in cols:
+        if request.cancel_check is not None:
+            request.cancel_check()
         sql = (
             f"SELECT COUNT(*) AS row_n, COUNT(DISTINCT {_quote_col(col)}) AS distinct_n "
             f"FROM {rel}"

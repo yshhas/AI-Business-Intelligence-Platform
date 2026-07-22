@@ -50,6 +50,8 @@ def run_data_bi_skill(request: RunRequest) -> RunResult:
     inner = request.execute_select
 
     def execute_select(sql: str, limit: int) -> dict[str, Any]:
+        if request.cancel_check is not None:
+            request.cancel_check()
         return tool_execute_select(
             sql,
             limit,
@@ -94,6 +96,7 @@ def run_data_bi_skill(request: RunRequest) -> RunResult:
             if hints.get("llm_retry_backoff_max_seconds") is not None
             else None
         ),
+        cancel_check=request.cancel_check,
     )
 
     def sink(step: StepRecord) -> None:
@@ -132,6 +135,8 @@ def run_data_bi_skill(request: RunRequest) -> RunResult:
                 )
             )
 
+    if request.cancel_check is not None:
+        request.cancel_check()
     graph = build_graph(ctx, sink=sink)
     final: dict[str, Any] = graph.invoke({})
 

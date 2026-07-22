@@ -11,19 +11,27 @@ from uuid import UUID
 
 from sqlalchemy import update
 
-from app.core.config import get_settings
+from app.core.config import assert_boot_runtime, get_settings
 from app.core.db import SessionLocal
 from app.core.observability import configure_worker_logging, log_run
+from app.core.repo_path import ensure_repo_root_on_path
 from app.models import AnalysisTask
 from app.services import artifact_service
 from app.services import cost_budget
 from app.services import queue as task_queue
 from app.services import run_lifecycle as rl
 from app.services import runtime_essentials as rt
-from app.workers.agent_runtime import AgentAnalysisError, run_agent_analysis
-from app.workers.mock_runtime import run_mock_analysis
+from app.workers.run_control import CancelToken
+
+ensure_repo_root_on_path()
+
+from app.workers.agent_runtime import AgentAnalysisError, run_agent_analysis  # noqa: E402
+from app.workers.mock_runtime import run_mock_analysis  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+# After abort, brief yield so in-flight checkpoints can observe the token (do not wait out Skill).
+_ABORT_GRACE_SECONDS = 0.25
 
 
 def _finalize_tokens(db, task: AnalysisTask) -> None:
@@ -215,6 +223,14 @@ def process_task(task_id: UUID) -> None:
         task = db.get(AnalysisTask, task_id)
         if task is None:
             return
+        # Discard late success if already terminalized (cooperative abort race)
+        if task.status in rl.TERMINAL_STATUSES:
+            logger.info(
+                "Task %s already terminal after run (status=%s) — discard success write",
+                task_id,
+                task.status,
+            )
+            return
         if task.cancel_requested or task.status == "cancelled":
             # Preserve best-effort execution from completed work if present
             if result_json:
@@ -222,9 +238,6 @@ def process_task(task_id: UUID) -> None:
                 task.result_json = base
                 rl.apply_trace_columns(task, base)
             _mark_cancelled(db, task, "Run cancelled")
-            return
-        if task.status in rl.TERMINAL_STATUSES:
-            logger.info("Task %s already terminal after run — skip success write", task_id)
             return
 
         task.result_json = rl.attach_run_platform(
@@ -272,31 +285,52 @@ def _run_with_timeout(
     runtime: str,
     timeout_seconds: int,
 ) -> dict[str, Any]:
-    """Run Skill in a worker thread with join timeout (cooperative; not hard kill)."""
+    """Run Skill in a worker thread with wall-clock abort (cooperative checkpoints)."""
     task_id = task.id
+    token = CancelToken()
 
     def _work() -> dict[str, Any]:
+        from agent.run_control import RunAborted
+
         # Fresh session inside thread for SQLAlchemy safety
         thread_db = SessionLocal()
         try:
             t = thread_db.get(AnalysisTask, task_id)
             if t is None:
                 raise RuntimeError("Task disappeared")
+            token.raise_if_aborted()
             if t.cancel_requested:
-                raise _Cancelled()
+                token.request_cancel()
+                raise RunAborted("cancelled")
             if runtime == "mock":
-                result = run_mock_analysis(thread_db, t)
+                result = run_mock_analysis(
+                    thread_db,
+                    t,
+                    cancel_check=token.raise_if_aborted,
+                    token=token,
+                )
             else:
                 settings = get_settings()
                 try:
-                    result = run_agent_analysis(thread_db, t, settings)
+                    result = run_agent_analysis(
+                        thread_db,
+                        t,
+                        settings,
+                        cancel_check=token.raise_if_aborted,
+                        token=token,
+                    )
                 except AgentAnalysisError:
-                    # Persist AgentRunStep rows even when Skill fails
+                    # Persist AgentRunStep rows even when Skill fails (if still running)
                     thread_db.commit()
                     raise
             thread_db.commit()
             return result
-        except (_Cancelled, AgentAnalysisError):
+        except RunAborted as exc:
+            thread_db.rollback()
+            if exc.reason == "timeout":
+                raise _TimedOut() from exc
+            raise _Cancelled() from exc
+        except (_Cancelled, _TimedOut, AgentAnalysisError):
             raise
         except Exception:
             thread_db.rollback()
@@ -304,8 +338,10 @@ def _run_with_timeout(
         finally:
             thread_db.close()
 
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        fut = pool.submit(_work)
+    pool = ThreadPoolExecutor(max_workers=1)
+    fut = pool.submit(_work)
+    aborted: str | None = None
+    try:
         deadline = time.monotonic() + max(1, timeout_seconds)
         settings = get_settings()
         hb_every = int(settings.run_heartbeat_interval_seconds or 0)
@@ -313,7 +349,9 @@ def _run_with_timeout(
         while True:
             # Prefer timeout decision even if the worker thread is about to finish.
             if time.monotonic() >= deadline:
-                raise _TimedOut()
+                token.request_timeout()
+                aborted = "timeout"
+                break
             wait = min(0.25, max(0.05, deadline - time.monotonic()))
             try:
                 return fut.result(timeout=wait)
@@ -321,7 +359,9 @@ def _run_with_timeout(
                 db.expire_all()
                 fresh = db.get(AnalysisTask, task_id)
                 if fresh is not None and fresh.cancel_requested:
-                    raise _Cancelled() from None
+                    token.request_cancel()
+                    aborted = "cancelled"
+                    break
                 if hb_every > 0 and (time.monotonic() - last_hb) >= hb_every:
                     try:
                         rt.touch_heartbeat(db, task_id)
@@ -330,6 +370,35 @@ def _run_with_timeout(
                         db.rollback()
                         logger.exception("heartbeat failed for %s", task_id)
                 continue
+            except _Cancelled:
+                aborted = "cancelled"
+                raise
+            except _TimedOut:
+                aborted = "timeout"
+                raise
+    finally:
+        if aborted:
+            token.close()
+            try:
+                pool.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                # Python < 3.9
+                pool.shutdown(wait=False)
+            # Brief yield only — do not join the Skill thread (wall-clock abort).
+            time.sleep(_ABORT_GRACE_SECONDS)
+            if not fut.done():
+                logger.warning(
+                    "Task %s Skill thread still running after abort (writes fenced)",
+                    task_id,
+                )
+        else:
+            pool.shutdown(wait=True)
+
+    if aborted == "timeout":
+        raise _TimedOut()
+    if aborted == "cancelled":
+        raise _Cancelled()
+    raise RuntimeError("unreachable: _run_with_timeout without result or abort")
 
 
 def _mark_cancelled(db, task: AnalysisTask, message: str) -> None:
@@ -430,6 +499,7 @@ def _observe_terminal(task: AnalysisTask) -> None:
 
 def run_forever() -> None:
     settings = get_settings()
+    assert_boot_runtime(settings)
     runtime = settings.analysis_runtime.strip().lower()
     if runtime not in {"mock", "agent"}:
         raise SystemExit(

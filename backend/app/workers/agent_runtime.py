@@ -30,10 +30,19 @@ class AgentAnalysisError(RuntimeError):
         self.result_json = result_json or {}
 
 
-def run_agent_analysis(db: Session, task: AnalysisTask, settings: Settings) -> dict[str, Any]:
+def run_agent_analysis(
+    db: Session,
+    task: AnalysisTask,
+    settings: Settings,
+    *,
+    cancel_check: Any | None = None,
+    token: Any | None = None,
+) -> dict[str, Any]:
     ensure_repo_root_on_path()
     from agent.runtime import run_analysis
+    from agent.run_control import RunAborted
     from agent.state import AnalysisContext
+    from app.workers.write_fence import write_allowed
 
     dataset = db.get(Dataset, task.dataset_id)
     if dataset is None:
@@ -135,11 +144,20 @@ def run_agent_analysis(db: Session, task: AnalysisTask, settings: Settings) -> d
         llm_max_retries=settings.llm_max_retries,
         llm_retry_backoff_seconds=settings.llm_retry_backoff_seconds,
         llm_retry_backoff_max_seconds=settings.llm_retry_backoff_max_seconds,
+        cancel_check=cancel_check,
     )
 
-    outcome = run_analysis(ctx)
+    try:
+        outcome = run_analysis(ctx)
+    except RunAborted:
+        raise
+
+    if not write_allowed(db, task.id, token):
+        raise RunAborted(token.reason() if token and token.reason() else "cancelled")
 
     for idx, step in enumerate(outcome.steps, start=1):
+        if not write_allowed(db, task.id, token):
+            break
         db.add(
             AgentRunStep(
                 task_id=task.id,
@@ -193,24 +211,28 @@ def run_agent_analysis(db: Session, task: AnalysisTask, settings: Settings) -> d
     result["platform"] = platform
 
     if outcome.success and settings.workspace_memory_enabled and skill_id == "data.bi":
-        try:
-            from app.services import workspace_memory as wmem
+        if write_allowed(db, task.id, token):
+            try:
+                from app.services import workspace_memory as wmem
 
-            selected: list[str] = []
-            sq = (platform.get("sql_quality") or {}) if isinstance(platform, dict) else {}
-            if isinstance(sq, dict):
-                selected = [str(c) for c in (sq.get("selected_columns") or []) if c]
-            if selected:
-                wmem.remember_from_link(
-                    db,
-                    workspace_id=workspace_id,
-                    dataset_id=dataset.id,
-                    question=task.question,
-                    selected_columns=selected,
-                )
-                db.flush()
-        except Exception:  # noqa: BLE001 — memory must not fail the Run
-            pass
+                selected: list[str] = []
+                sq = (platform.get("sql_quality") or {}) if isinstance(platform, dict) else {}
+                if isinstance(sq, dict):
+                    selected = [str(c) for c in (sq.get("selected_columns") or []) if c]
+                if selected:
+                    wmem.remember_from_link(
+                        db,
+                        workspace_id=workspace_id,
+                        dataset_id=dataset.id,
+                        question=task.question,
+                        selected_columns=selected,
+                    )
+                    db.flush()
+            except Exception:  # noqa: BLE001 — memory must not fail the Run
+                pass
+
+    if not write_allowed(db, task.id, token):
+        raise RunAborted(token.reason() if token and token.reason() else "cancelled")
 
     if not outcome.success:
         raise AgentAnalysisError(

@@ -34,7 +34,7 @@
 | `TASK_SSE_MAX_SECONDS` | `600` | API | T-10 SSE max watch | Client may fall back to poll |
 | `UPLOAD_DIR` / `DUCKDB_DIR` | `./data/...` | API · Worker | File plane | Relative to repo root |
 | `MAX_UPLOAD_BYTES` | `20971520` | API | Upload cap | |
-| `ANALYSIS_RUNTIME` | `mock` | **Worker** | `mock` \| `agent` | |
+| `ANALYSIS_RUNTIME` | `mock` (code) / `agent` (`.env.example` & Compose) | **Worker** | `mock` \| `agent` | **production/staging:** must be `agent` (boot refuses `mock`) |
 | `ANALYSIS_QUEUE_KEY` | `aibi:analysis_tasks` | API · Worker | Redis List key | |
 | `REDIS_BRPOP_TIMEOUT_SECONDS` | `5` | Worker | Idle reclaim window | |
 | `SQL_DEFAULT_LIMIT` | `200` | Worker (agent) | Select limit | |
