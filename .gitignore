@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage/
+.tox/
+.cache/
+
+# Node
+node_modules/
+frontend/dist/
+*.log
+.npm/
+
+# Data (uploads / DuckDB) — Phase 2+
+# Keep directory placeholders; ignore runtime artifacts
+data/uploads/*
+!data/uploads/.gitkeep
+data/duckdb/*
+!data/duckdb/.gitkeep
+*.duckdb
+data/*.db
+*.sqlite
+*.sqlite3
+
+# Local smoke / run logs (never commit)
+backend/_run_log.txt
+backend/smoke_out.txt
+*_run_log.txt
+smoke_out.txt
+
+# P0-1 eval local reports (baseline under evals/baselines/ is committed)
+evals/reports/
+evals/_run_out.txt
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local env overrides
+.env.local
+.env.*.local

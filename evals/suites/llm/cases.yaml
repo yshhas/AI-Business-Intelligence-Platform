@@ -1,0 +1,43 @@
+# Optional live-LLM suite — not part of default CI release gate.
+# Run: python scripts/smoke_eval_golden.py --suite llm
+# Skips cleanly when LLM_API_KEY is empty.
+suite: llm
+version: 1
+defaults:
+  plane: file
+  skill_id: data.bi
+  max_retries: 2
+  default_limit: 200
+  allow_heuristic_sql: false
+  fixture: fixtures/file/sales_mini.csv
+  mode: pipeline
+
+cases:
+  - id: llm.file.agg_region
+    question: "按 region 汇总 amount，从高到低排序"
+    require_llm: true
+    tags: [llm, aggregate]
+    expect:
+      gate: allow
+      success: true
+      sql_constraints:
+        must_include_tables: ["{{table}}"]
+        must_match_any: ["SUM", "sum", "GROUP"]
+      row_checks:
+        min_rows: 1
+        columns_contain: ["region"]
+
+  - id: llm.file.preview_limit
+    question: "list region and product with amount greater than 100"
+    require_llm: true
+    tags: [llm, filter]
+    expect:
+      gate: allow
+      success: true
+      sql_constraints:
+        must_include_tables: ["{{table}}"]
+        must_match_any: ["SELECT", "select"]
+        must_not_match: ["INSERT", "DROP", "DELETE"]
+      row_checks:
+        min_rows: 0
+        columns_contain: ["region"]

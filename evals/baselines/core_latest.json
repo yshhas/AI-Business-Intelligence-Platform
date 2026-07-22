@@ -1,0 +1,292 @@
+{
+  "suite": "core",
+  "suite_version": 1,
+  "runner_version": 1,
+  "started_at": "2026-07-21T19:13:50.848661+00:00",
+  "finished_at": "2026-07-21T19:13:52.582594+00:00",
+  "config": {
+    "allow_heuristic_sql": false,
+    "llm_enabled": false,
+    "skill_id": "data.bi",
+    "postgres_ro": false
+  },
+  "summary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 2,
+    "gate_pass_rate": 1.0,
+    "execute_success_rate": 1.0,
+    "result_match_rate": 1.0,
+    "outcome_success_rate": 1.0,
+    "failure_class_distribution": {
+      "policy_denied": 4,
+      "none": 3,
+      "skill_error": 1
+    },
+    "heuristic_use_count": 0,
+    "case_pass_rate": 1.0
+  },
+  "cases": [
+    {
+      "id": "gate.deny.drop",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "gate": "pass",
+        "sql_constraints": "pass",
+        "execute": "pass",
+        "result": "skip",
+        "success": "pass",
+        "failure_class": "pass"
+      },
+      "observed": {
+        "success": false,
+        "sql_final": null,
+        "sql_raw": "DROP TABLE ds_eval_cf4f30f57cf2",
+        "gate_ok": false,
+        "gate_reason": "Forbidden keyword detected (write/DDL/admin)",
+        "policy_id": "sql.select_gate",
+        "failure_class": "policy_denied",
+        "row_count": null,
+        "executed": false,
+        "plane": "file",
+        "table": "ds_eval_cf4f30f57cf2",
+        "sql_source": "injected",
+        "heuristic_used": false
+      },
+      "errors": []
+    },
+    {
+      "id": "gate.deny.insert",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "gate": "pass",
+        "sql_constraints": "pass",
+        "execute": "pass",
+        "result": "skip",
+        "success": "pass",
+        "failure_class": "pass"
+      },
+      "observed": {
+        "success": false,
+        "sql_final": null,
+        "sql_raw": "INSERT INTO ds_eval_8a22cc414e33 (region, product, amount) VALUES ('X', 'Y', 1)",
+        "gate_ok": false,
+        "gate_reason": "Forbidden keyword detected (write/DDL/admin)",
+        "policy_id": "sql.select_gate",
+        "failure_class": "policy_denied",
+        "row_count": null,
+        "executed": false,
+        "plane": "file",
+        "table": "ds_eval_8a22cc414e33",
+        "sql_source": "injected",
+        "heuristic_used": false
+      },
+      "errors": []
+    },
+    {
+      "id": "gate.deny.multi_stmt",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "gate": "pass",
+        "sql_constraints": "pass",
+        "execute": "pass",
+        "result": "skip",
+        "success": "pass",
+        "failure_class": "pass"
+      },
+      "observed": {
+        "success": false,
+        "sql_final": null,
+        "sql_raw": "SELECT 1 FROM ds_eval_0372af02c4dc; SELECT 2 FROM ds_eval_0372af02c4dc",
+        "gate_ok": false,
+        "gate_reason": "Multiple statements are not allowed",
+        "policy_id": "sql.select_gate",
+        "failure_class": "policy_denied",
+        "row_count": null,
+        "executed": false,
+        "plane": "file",
+        "table": "ds_eval_0372af02c4dc",
+        "sql_source": "injected",
+        "heuristic_used": false
+      },
+      "errors": []
+    },
+    {
+      "id": "gate.deny.wrong_table",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "gate": "pass",
+        "sql_constraints": "pass",
+        "execute": "pass",
+        "result": "skip",
+        "success": "pass",
+        "failure_class": "pass"
+      },
+      "observed": {
+        "success": false,
+        "sql_final": null,
+        "sql_raw": "SELECT * FROM other_table",
+        "gate_ok": false,
+        "gate_reason": "Table 'other_table' is not in allowlist ['ds_eval_fbd9828d5ad8']",
+        "policy_id": "sql.select_gate",
+        "failure_class": "policy_denied",
+        "row_count": null,
+        "executed": false,
+        "plane": "file",
+        "table": "ds_eval_fbd9828d5ad8",
+        "sql_source": "injected",
+        "heuristic_used": false
+      },
+      "errors": []
+    },
+    {
+      "id": "gate.allow.select_preview",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "gate": "pass",
+        "sql_constraints": "pass",
+        "execute": "pass",
+        "result": "pass",
+        "success": "pass",
+        "failure_class": "skip"
+      },
+      "observed": {
+        "success": true,
+        "sql_final": "SELECT region, product, amount FROM ds_eval_97fe2fcb2cc0\nLIMIT 200",
+        "sql_raw": "SELECT region, product, amount FROM ds_eval_97fe2fcb2cc0",
+        "gate_ok": true,
+        "gate_reason": null,
+        "policy_id": "sql.select_gate",
+        "failure_class": null,
+        "row_count": 5,
+        "executed": true,
+        "plane": "file",
+        "table": "ds_eval_97fe2fcb2cc0",
+        "sql_source": "injected",
+        "heuristic_used": false
+      },
+      "errors": []
+    },
+    {
+      "id": "gate.allow.agg_sum",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "gate": "pass",
+        "sql_constraints": "pass",
+        "execute": "pass",
+        "result": "pass",
+        "success": "pass",
+        "failure_class": "skip"
+      },
+      "observed": {
+        "success": true,
+        "sql_final": "SELECT region, SUM(amount) AS total FROM ds_eval_c33e8d252c61 GROUP BY region ORDER BY total DESC\nLIMIT 200",
+        "sql_raw": "SELECT region, SUM(amount) AS total FROM ds_eval_c33e8d252c61 GROUP BY region ORDER BY total DESC",
+        "gate_ok": true,
+        "gate_reason": null,
+        "policy_id": "sql.select_gate",
+        "failure_class": null,
+        "row_count": 4,
+        "executed": true,
+        "plane": "file",
+        "table": "ds_eval_c33e8d252c61",
+        "sql_source": "injected",
+        "heuristic_used": false
+      },
+      "errors": []
+    },
+    {
+      "id": "file.fixture.row_count",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "fixture_row_count": "pass",
+        "fixture_columns": "pass"
+      },
+      "observed": {
+        "table": "ds_eval_ec53bb83eeb3",
+        "schema": [
+          {
+            "name": "region",
+            "type": "VARCHAR"
+          },
+          {
+            "name": "product",
+            "type": "VARCHAR"
+          },
+          {
+            "name": "amount",
+            "type": "BIGINT"
+          }
+        ],
+        "row_count": 5,
+        "columns": [
+          "region",
+          "product",
+          "amount"
+        ]
+      },
+      "errors": []
+    },
+    {
+      "id": "pipeline.no_key.no_heuristic",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "heuristic": "pass",
+        "success": "pass"
+      },
+      "observed": {
+        "success": false,
+        "sql_final": null,
+        "gate_ok": false,
+        "failure_class": "skill_error",
+        "row_count": 0,
+        "retry_count": null,
+        "sql_source": "none",
+        "heuristic_used": false,
+        "error_message": "Empty SQL",
+        "latency_ms": 788,
+        "table": "ds_eval_d90033e45da9"
+      },
+      "errors": []
+    },
+    {
+      "id": "postgres_ro.gate.allow_preview",
+      "passed": true,
+      "skipped": true,
+      "skip_reason": "POSTGRES_RO_DSN unset",
+      "checks": {
+        "skip": "pass"
+      },
+      "observed": {},
+      "errors": []
+    },
+    {
+      "id": "postgres_ro.gate.deny_write",
+      "passed": true,
+      "skipped": true,
+      "skip_reason": "POSTGRES_RO_DSN unset",
+      "checks": {
+        "skip": "pass"
+      },
+      "observed": {},
+      "errors": []
+    }
+  ]
+}

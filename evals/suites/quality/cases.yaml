@@ -1,0 +1,196 @@
+# E1-C quality suite — Schema Linking Lite (deterministic, CI-blocking).
+# Heuristic SQL forced off. No live LLM required for link_only cases.
+suite: quality
+version: 1
+defaults:
+  plane: file
+  skill_id: data.bi
+  allow_heuristic_sql: false
+  max_columns: 4
+  mode: link_only
+
+cases:
+  - id: link.ok.region_amount
+    mode: link_only
+    question: "sum amount by region"
+    table: sales_wide
+    max_columns: 4
+    schema:
+      - {name: region, type: VARCHAR}
+      - {name: product, type: VARCHAR}
+      - {name: amount, type: DOUBLE}
+      - {name: noise_a, type: VARCHAR}
+      - {name: noise_b, type: INTEGER}
+      - {name: noise_c, type: VARCHAR}
+      - {name: noise_d, type: DOUBLE}
+      - {name: noise_e, type: VARCHAR}
+      - {name: noise_f, type: INTEGER}
+      - {name: noise_g, type: VARCHAR}
+      - {name: noise_h, type: DOUBLE}
+      - {name: noise_i, type: VARCHAR}
+      - {name: noise_j, type: INTEGER}
+    expect:
+      link_status: ok
+      link_method_in: [token_overlap]
+      selected_columns_contain: [region, amount]
+      selected_columns_exclude: [noise_a, noise_j]
+      selected_tables_contain: [sales_wide]
+
+  - id: link.partial.single_hit
+    mode: link_only
+    question: "filter by region"
+    table: sales_wide
+    max_columns: 4
+    schema:
+      - {name: region, type: VARCHAR}
+      - {name: product, type: VARCHAR}
+      - {name: amount, type: DOUBLE}
+      - {name: noise_a, type: VARCHAR}
+      - {name: noise_b, type: INTEGER}
+      - {name: noise_c, type: VARCHAR}
+      - {name: noise_d, type: DOUBLE}
+      - {name: noise_e, type: VARCHAR}
+      - {name: noise_f, type: INTEGER}
+      - {name: noise_g, type: VARCHAR}
+      - {name: noise_h, type: DOUBLE}
+      - {name: noise_i, type: VARCHAR}
+      - {name: noise_j, type: INTEGER}
+    expect:
+      link_status: partial
+      link_method: token_overlap
+      selected_columns_contain: [region]
+      selected_columns_exclude: [noise_a]
+
+  - id: link.fallback.no_overlap
+    mode: link_only
+    question: "what is the weather tomorrow in the city"
+    table: sales_wide
+    max_columns: 4
+    schema:
+      - {name: region, type: VARCHAR}
+      - {name: product, type: VARCHAR}
+      - {name: amount, type: DOUBLE}
+      - {name: noise_a, type: VARCHAR}
+      - {name: noise_b, type: INTEGER}
+      - {name: noise_c, type: VARCHAR}
+      - {name: noise_d, type: DOUBLE}
+      - {name: noise_e, type: VARCHAR}
+      - {name: noise_f, type: INTEGER}
+      - {name: noise_g, type: VARCHAR}
+      - {name: noise_h, type: DOUBLE}
+      - {name: noise_i, type: VARCHAR}
+      - {name: noise_j, type: INTEGER}
+    expect:
+      link_status: fallback_full
+      link_method: fallback_full
+      selected_tables_contain: [sales_wide]
+
+  - id: link.failed.empty_schema
+    mode: link_only
+    question: "sum amount by region"
+    table: empty_tbl
+    schema: []
+    expect:
+      link_status: failed
+      selected_columns_contain: []
+
+  - id: link.identity.small_schema
+    mode: link_only
+    question: "anything"
+    table: sales_mini
+    max_columns: 12
+    schema:
+      - {name: region, type: VARCHAR}
+      - {name: product, type: VARCHAR}
+      - {name: amount, type: DOUBLE}
+    expect:
+      link_status: ok
+      link_method: identity
+      selected_columns_contain: [region, product, amount]
+
+  - id: link.ok.product_amount
+    mode: link_only
+    question: "total amount by product"
+    table: sales_wide
+    max_columns: 4
+    schema:
+      - {name: region, type: VARCHAR}
+      - {name: product, type: VARCHAR}
+      - {name: amount, type: DOUBLE}
+      - {name: noise_a, type: VARCHAR}
+      - {name: noise_b, type: INTEGER}
+      - {name: noise_c, type: VARCHAR}
+      - {name: noise_d, type: DOUBLE}
+      - {name: noise_e, type: VARCHAR}
+      - {name: noise_f, type: INTEGER}
+      - {name: noise_g, type: VARCHAR}
+      - {name: noise_h, type: DOUBLE}
+      - {name: noise_i, type: VARCHAR}
+      - {name: noise_j, type: INTEGER}
+    expect:
+      link_status: ok
+      link_method_in: [token_overlap]
+      selected_columns_contain: [product, amount]
+      selected_columns_exclude: [noise_a, noise_j]
+
+  - id: link.ok.region_token_in_sentence
+    mode: link_only
+    question: "show amount grouped by region for the latest period"
+    table: sales_wide
+    max_columns: 4
+    schema:
+      - {name: region, type: VARCHAR}
+      - {name: product, type: VARCHAR}
+      - {name: amount, type: DOUBLE}
+      - {name: noise_a, type: VARCHAR}
+      - {name: noise_b, type: INTEGER}
+      - {name: noise_c, type: VARCHAR}
+      - {name: noise_d, type: DOUBLE}
+      - {name: noise_e, type: VARCHAR}
+      - {name: noise_f, type: INTEGER}
+      - {name: noise_g, type: VARCHAR}
+      - {name: noise_h, type: DOUBLE}
+      - {name: noise_i, type: VARCHAR}
+      - {name: noise_j, type: INTEGER}
+    expect:
+      link_status: ok
+      link_method_in: [token_overlap, synonym_overlap]
+      selected_columns_contain: [region, amount]
+      selected_columns_exclude: [noise_b]
+
+  - id: link.ok.synonym_zh_sales_region
+    mode: link_only
+    question: "按区域汇总销售额"
+    table: sales_wide
+    max_columns: 4
+    schema:
+      - {name: region, type: VARCHAR}
+      - {name: product, type: VARCHAR}
+      - {name: amount, type: DOUBLE}
+      - {name: noise_a, type: VARCHAR}
+      - {name: noise_b, type: INTEGER}
+      - {name: noise_c, type: VARCHAR}
+      - {name: noise_d, type: DOUBLE}
+      - {name: noise_e, type: VARCHAR}
+      - {name: noise_f, type: INTEGER}
+      - {name: noise_g, type: VARCHAR}
+      - {name: noise_h, type: DOUBLE}
+      - {name: noise_i, type: VARCHAR}
+      - {name: noise_j, type: INTEGER}
+    expect:
+      link_status: ok
+      link_method_in: [synonym_overlap]
+      selected_columns_contain: [region, amount]
+      selected_columns_exclude: [noise_a, noise_j]
+
+  # Pipeline honesty still records link_status (identity on sales_mini ≤ K)
+  - id: pipeline.link_present.no_heuristic
+    mode: pipeline
+    question: "各地区销售额合计是多少？"
+    fixture: fixtures/file/sales_mini.csv
+    tags: [pipeline, link, honesty]
+    expect:
+      success: false
+      heuristic_forbidden: true
+      link_status_in: [ok, partial, fallback_full, failed]
+      link_method_in: [token_overlap, fallback_full, identity, synonym_overlap]

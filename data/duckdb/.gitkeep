@@ -1,0 +1,2 @@
+# Per-workspace DuckDB files live here (gitignored *.duckdb).
+# Layout: {workspace_id}.duckdb

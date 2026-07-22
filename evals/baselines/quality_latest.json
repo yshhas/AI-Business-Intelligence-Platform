@@ -1,0 +1,230 @@
+{
+  "suite": "quality",
+  "suite_version": 1,
+  "runner_version": 1,
+  "started_at": "2026-07-21T19:45:04.796467+00:00",
+  "finished_at": "2026-07-21T19:45:06.068219+00:00",
+  "config": {
+    "allow_heuristic_sql": false,
+    "llm_enabled": false,
+    "skill_id": "data.bi",
+    "postgres_ro": false
+  },
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "gate_pass_rate": null,
+    "execute_success_rate": null,
+    "result_match_rate": null,
+    "outcome_success_rate": 1.0,
+    "failure_class_distribution": {
+      "none": 5,
+      "skill_error": 1
+    },
+    "heuristic_use_count": 0,
+    "case_pass_rate": 1.0,
+    "link_status_distribution": {
+      "ok": 3,
+      "partial": 1,
+      "fallback_full": 1,
+      "failed": 1
+    },
+    "link_ok_rate": 0.5,
+    "link_fallback_rate": 0.1667,
+    "link_failed_rate": 0.1667,
+    "schema_link_cases": 6,
+    "schema_link_passed": 6
+  },
+  "cases": [
+    {
+      "id": "link.ok.region_amount",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "link_status": "pass",
+        "link_method_in": "pass",
+        "selected_columns_contain:region": "pass",
+        "selected_columns_contain:amount": "pass",
+        "selected_columns_exclude:noise_a": "pass",
+        "selected_columns_exclude:noise_j": "pass",
+        "selected_tables_contain:sales_wide": "pass"
+      },
+      "observed": {
+        "link_status": "ok",
+        "link_method": "token_overlap",
+        "link_reason": null,
+        "selected_tables": [
+          "sales_wide"
+        ],
+        "selected_columns": [
+          "region",
+          "amount"
+        ],
+        "column_count_full": 13,
+        "column_count_linked": 2,
+        "table": "sales_wide",
+        "heuristic_used": false,
+        "sql_source": "none"
+      },
+      "errors": []
+    },
+    {
+      "id": "link.partial.single_hit",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "link_status": "pass",
+        "link_method": "pass",
+        "selected_columns_contain:region": "pass",
+        "selected_columns_exclude:noise_a": "pass"
+      },
+      "observed": {
+        "link_status": "partial",
+        "link_method": "token_overlap",
+        "link_reason": "weak_coverage",
+        "selected_tables": [
+          "sales_wide"
+        ],
+        "selected_columns": [
+          "region"
+        ],
+        "column_count_full": 13,
+        "column_count_linked": 1,
+        "table": "sales_wide",
+        "heuristic_used": false,
+        "sql_source": "none"
+      },
+      "errors": []
+    },
+    {
+      "id": "link.fallback.no_overlap",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "link_status": "pass",
+        "link_method": "pass",
+        "selected_tables_contain:sales_wide": "pass"
+      },
+      "observed": {
+        "link_status": "fallback_full",
+        "link_method": "fallback_full",
+        "link_reason": "no_token_overlap",
+        "selected_tables": [
+          "sales_wide"
+        ],
+        "selected_columns": [
+          "region",
+          "product",
+          "amount",
+          "noise_a"
+        ],
+        "column_count_full": 13,
+        "column_count_linked": 4,
+        "table": "sales_wide",
+        "heuristic_used": false,
+        "sql_source": "none"
+      },
+      "errors": []
+    },
+    {
+      "id": "link.failed.empty_schema",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "link_status": "pass"
+      },
+      "observed": {
+        "link_status": "failed",
+        "link_method": "token_overlap",
+        "link_reason": "schema_empty",
+        "selected_tables": [
+          "empty_tbl"
+        ],
+        "selected_columns": [],
+        "column_count_full": 0,
+        "column_count_linked": 0,
+        "table": "empty_tbl",
+        "heuristic_used": false,
+        "sql_source": "none"
+      },
+      "errors": []
+    },
+    {
+      "id": "link.identity.small_schema",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "link_status": "pass",
+        "link_method": "pass",
+        "selected_columns_contain:region": "pass",
+        "selected_columns_contain:product": "pass",
+        "selected_columns_contain:amount": "pass"
+      },
+      "observed": {
+        "link_status": "ok",
+        "link_method": "identity",
+        "link_reason": "within_k_noop",
+        "selected_tables": [
+          "sales_mini"
+        ],
+        "selected_columns": [
+          "region",
+          "product",
+          "amount"
+        ],
+        "column_count_full": 3,
+        "column_count_linked": 3,
+        "table": "sales_mini",
+        "heuristic_used": false,
+        "sql_source": "none"
+      },
+      "errors": []
+    },
+    {
+      "id": "pipeline.link_present.no_heuristic",
+      "passed": true,
+      "skipped": false,
+      "skip_reason": null,
+      "checks": {
+        "heuristic": "pass",
+        "success": "pass",
+        "link_status_in": "pass",
+        "link_method_in": "pass"
+      },
+      "observed": {
+        "success": false,
+        "sql_final": null,
+        "gate_ok": false,
+        "failure_class": "skill_error",
+        "row_count": 0,
+        "retry_count": null,
+        "sql_source": "none",
+        "heuristic_used": false,
+        "error_message": "Empty SQL",
+        "latency_ms": 761,
+        "table": "ds_eval_0bed0dedc4d7",
+        "link_status": "ok",
+        "link_method": "identity",
+        "link_reason": "within_k_noop",
+        "selected_tables": [
+          "ds_eval_0bed0dedc4d7"
+        ],
+        "selected_columns": [
+          "region",
+          "product",
+          "amount"
+        ],
+        "column_count_full": 3,
+        "column_count_linked": 3
+      },
+      "errors": []
+    }
+  ]
+}

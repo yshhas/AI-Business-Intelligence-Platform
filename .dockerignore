@@ -1,0 +1,19 @@
+# T-12 — keep image lean; context is repo root
+.git
+.gitignore
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/node_modules
+frontend
+docs
+data/uploads
+data/duckdb
+**/*.duckdb
+**/.env
+backend/_run_log.txt
+**/*.md
+!backend/requirements.txt

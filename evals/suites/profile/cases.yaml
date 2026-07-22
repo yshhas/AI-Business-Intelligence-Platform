@@ -1,0 +1,20 @@
+# Wave 3 — second Skill proof (data.profile). Deterministic; no LLM.
+suite: profile
+version: 1
+defaults:
+  plane: file
+  skill_id: data.profile
+  max_retries: 1
+  default_limit: 200
+  allow_heuristic_sql: false
+  fixture: fixtures/file/sales_mini.csv
+
+cases:
+  - id: profile.pipeline.basic
+    mode: pipeline
+    skill_id: data.profile
+    question: "profile this dataset"
+    tags: [skill, profile, wave3]
+    expect:
+      success: true
+      skill_id: data.profile

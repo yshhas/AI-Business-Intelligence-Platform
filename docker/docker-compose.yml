@@ -1,0 +1,205 @@
+# T-12 — full platform stack: infra + API + Worker
+# Usage (from repo root):
+#   docker compose -f docker/docker-compose.yml --env-file .env up -d --build
+#
+# Host venv URLs in .env use localhost:5433/6379/5434.
+# api/worker override those to Compose DNS names (postgres/redis/postgres_ro).
+
+x-app-build: &app-build
+  context: ..
+  dockerfile: docker/Dockerfile
+
+x-app-environment: &app-environment
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aibi}:${POSTGRES_PASSWORD:-aibi_dev_password}@postgres:5432/${POSTGRES_DB:-aibi}
+  REDIS_URL: redis://redis:6379/0
+  POSTGRES_RO_DSN: postgresql://aibi_ro:aibi_ro_password@postgres_ro:5432/aibi_data
+  UPLOAD_DIR: ./data/uploads
+  DUCKDB_DIR: ./data/duckdb
+  APP_ENV: ${APP_ENV:-development}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  JWT_SECRET: ${JWT_SECRET:-change-me-in-phase-1-use-a-long-random-string}
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+  REFRESH_TOKEN_EXPIRE_MINUTES: ${REFRESH_TOKEN_EXPIRE_MINUTES:-10080}
+  RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+  WORKER_HEALTH_PORT: ${WORKER_HEALTH_PORT:-8001}
+  METRICS_ENABLED: ${METRICS_ENABLED:-true}
+  ANALYSIS_RUNTIME: ${ANALYSIS_RUNTIME:-agent}
+  ANALYSIS_QUEUE_KEY: ${ANALYSIS_QUEUE_KEY:-aibi:analysis_tasks}
+  ALLOW_HEURISTIC_SQL: ${ALLOW_HEURISTIC_SQL:-true}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_PROVIDER: ${LLM_PROVIDER:-openai_compatible}
+  LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
+  LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+  LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-2}
+  RUN_TIMEOUT_SECONDS: ${RUN_TIMEOUT_SECONDS:-120}
+  RUN_MAX_IN_FLIGHT: ${RUN_MAX_IN_FLIGHT:-4}
+  ANALYSIS_QUEUE_MAX_DEPTH: ${ANALYSIS_QUEUE_MAX_DEPTH:-50}
+  STALE_RUNNING_SECONDS: ${STALE_RUNNING_SECONDS:-0}
+  RUN_HEARTBEAT_INTERVAL_SECONDS: ${RUN_HEARTBEAT_INTERVAL_SECONDS:-15}
+  SKILL_DATA_BI_ENABLED: ${SKILL_DATA_BI_ENABLED:-true}
+  SKILL_DATA_BI_VERSION: ${SKILL_DATA_BI_VERSION:-1.0.0}
+  TASK_SSE_POLL_SECONDS: ${TASK_SSE_POLL_SECONDS:-0.5}
+  TASK_SSE_HEARTBEAT_SECONDS: ${TASK_SSE_HEARTBEAT_SECONDS:-5}
+  TASK_SSE_MAX_SECONDS: ${TASK_SSE_MAX_SECONDS:-600}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aibi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aibi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aibi_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-aibi}
+    ports:
+      # Host 5433 avoids conflict when another local Postgres already binds 5432.
+      - "5433:5432"
+    volumes:
+      - aibi_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aibi} -d ${POSTGRES_DB:-aibi}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: aibi-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - aibi_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # M3 — separate read-only enterprise data plane (not platform metadata DB)
+  postgres_ro:
+    image: postgres:16-alpine
+    container_name: aibi-postgres-ro
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aibi_data_admin
+      POSTGRES_PASSWORD: aibi_data_admin_password
+      POSTGRES_DB: aibi_data
+    ports:
+      - "5434:5432"
+    volumes:
+      - aibi_pg_ro_data:/var/lib/postgresql/data
+      - ./postgres_ro_init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aibi_data_admin -d aibi_data"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: *app-build
+    image: aibi-app:local
+    container_name: aibi-api
+    restart: unless-stopped
+    environment:
+      <<: *app-environment
+      APP_ROLE: api
+      API_PORT: "8000"
+    env_file:
+      - path: ../.env
+        required: false
+    ports:
+      - "8000:8000"
+    volumes:
+      # Shared with worker so upload → DuckDB Analyze works across processes
+      - ../data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres_ro:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  worker:
+    build: *app-build
+    image: aibi-app:local
+    container_name: aibi-worker
+    restart: unless-stopped
+    environment:
+      <<: *app-environment
+      APP_ROLE: worker
+    env_file:
+      - path: ../.env
+        required: false
+    ports:
+      # P1 Worker HTTP health (live/ready)
+      - "8001:8001"
+    volumes:
+      - ../data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres_ro:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    image: aibi-web:local
+    container_name: aibi-web
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  prometheus:
+    profiles: ["obs"]
+    image: prom/prometheus:v2.55.1
+    container_name: aibi-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+  grafana:
+    profiles: ["obs"]
+    image: grafana/grafana:11.4.0
+    container_name: aibi-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+
+volumes:
+  aibi_pg_data:
+  aibi_redis_data:
+  aibi_pg_ro_data:
