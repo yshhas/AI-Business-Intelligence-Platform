@@ -19,6 +19,7 @@ from app.models import AnalysisTask
 from app.services import artifact_service
 from app.services import cost_budget
 from app.services import queue as task_queue
+from app.services import result_payload
 from app.services import run_lifecycle as rl
 from app.services import runtime_essentials as rt
 from app.workers.run_control import CancelToken
@@ -159,8 +160,7 @@ def process_task(task_id: UUID) -> None:
                     timeout_seconds=task.timeout_seconds,
                     task_id=str(task.id),
                 )
-                rl.apply_trace_columns(task, task.result_json)
-                _materialize_artifacts(db, task)
+                _seal_result_json(db, task)
                 _finalize_tokens(db, task)
                 db.add(task)
                 db.commit()
@@ -199,8 +199,7 @@ def process_task(task_id: UUID) -> None:
                     timeout_seconds=task.timeout_seconds,
                     task_id=str(task.id),
                 )
-                rl.apply_trace_columns(task, task.result_json)
-                _materialize_artifacts(db, task)
+                _seal_result_json(db, task)
                 _finalize_tokens(db, task)
                 db.add(task)
                 db.commit()
@@ -236,7 +235,7 @@ def process_task(task_id: UUID) -> None:
             if result_json:
                 base = dict(result_json)
                 task.result_json = base
-                rl.apply_trace_columns(task, base)
+                # Trace columns applied inside cancel marker after attach
             _mark_cancelled(db, task, "Run cancelled")
             return
 
@@ -248,8 +247,7 @@ def process_task(task_id: UUID) -> None:
             timeout_seconds=task.timeout_seconds,
             task_id=str(task.id),
         )
-        rl.apply_trace_columns(task, task.result_json)
-        _materialize_artifacts(db, task)
+        _seal_result_json(db, task)
         _finalize_tokens(db, task)
         task.status = "succeeded"
         task.failure_class = None
@@ -424,8 +422,7 @@ def _mark_cancelled(db, task: AnalysisTask, message: str) -> None:
         timeout_seconds=task.timeout_seconds,
         task_id=str(task.id),
     )
-    rl.apply_trace_columns(task, task.result_json)
-    _materialize_artifacts(db, task)
+    _seal_result_json(db, task)
     _finalize_tokens(db, task)
     db.add(task)
     db.commit()
@@ -462,8 +459,7 @@ def _mark_timed_out(db, task: AnalysisTask, timeout: int) -> None:
         timeout_seconds=task.timeout_seconds or timeout,
         task_id=str(task.id),
     )
-    rl.apply_trace_columns(task, task.result_json)
-    _materialize_artifacts(db, task)
+    _seal_result_json(db, task)
     _finalize_tokens(db, task)
     db.add(task)
     db.commit()
@@ -477,6 +473,13 @@ def _mark_timed_out(db, task: AnalysisTask, timeout: int) -> None:
         failure_class=rl.FAILURE_TIMEOUT,
         skill_id=task.skill_id,
     )
+
+
+def _seal_result_json(db, task: AnalysisTask) -> None:
+    """Trace columns → artifacts from full payload → P1.4 hot slim."""
+    rl.apply_trace_columns(task, task.result_json)
+    _materialize_artifacts(db, task)
+    task.result_json = result_payload.slim_for_persist(task.result_json)
 
 
 def _materialize_artifacts(db, task: AnalysisTask) -> None:

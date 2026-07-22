@@ -5,6 +5,38 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — Unreleased (draft for Sprint 4 exit)
+
+### Added
+
+- Cooperative cancel / timeout with write fence (P1.1)
+- Refresh `jti` sessions, rotation revoke, logout (P1.2)
+- Workspace memory TTL + per-workspace cap (P1.3)
+- Hot `result_json` size bounds with explicit `platform.payload` truncation metadata (P1.4)
+- `list_tasks` batched ACL preload (P1.5)
+- `ANALYSIS_RUNTIME` boot hardening for prod/staging (P1.6)
+- Guardrails covering Run `table_preview` and Dataset `/preview` (P1.7)
+- Token storage ADR — localStorage accepted for v1.1; Cookie deferred (P1.8)
+- Product Shell: Skill picker, ACL UI, mysql-ro disabled placeholder (P1.10)
+- HITL SQL approval **design document only** (no state machine)
+
+### Changed
+
+- Worker persists slim hot results after artifact materialization; Trace `platform.execution` remains on hot path
+- Auth refresh reuse after rotation returns 401
+
+### Migration notes
+
+- Apply Alembic through `0014_sprint2_refresh_memory` (refresh_sessions + memory `expires_at`)
+- Existing refresh JWTs without session rows require re-login
+
+### Known limitations
+
+- Hot truncation does not add object-store cold blobs in v1.1 (omissions are explicit)
+- Cookie / HttpOnly auth not implemented (see ADR)
+- HITL approval not implemented (design only)
+- Phase 2 (Semantic / Multi-Agent / HITL code) not started
+
 ## [1.0.0] — 2026-07-22
 
 ### Added

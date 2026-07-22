@@ -1,3 +1,44 @@
+# Release Notes — v1.1.0 (draft)
+
+**Status:** Draft for Sprint 4 exit · **tag not cut**  
+**Base:** Phase 1 Sprints 1–4 on `main`  
+**Spine:** Product Shell → Worker → Kernel → Skill → Policy → Data Plane → Trace / Artifacts
+
+> v1.0 froze the governed spine. **v1.1** adds honest runtime cancel, refresh revoke, bounded memory/results, Product Shell visibility, and documented token storage — without Phase 2 features.
+
+Canonical plan: [docs/V2_IMPLEMENTATION_PLAN.md](docs/V2_IMPLEMENTATION_PLAN.md) · Token ADR: [docs/ADR_TOKEN_STORAGE.md](docs/ADR_TOKEN_STORAGE.md)
+
+---
+
+## Summary
+
+Pilot-ready hardening on top of v1.0:
+
+- Cooperative cancel/timeout + write fence  
+- Refresh session revoke / rotation / logout  
+- Memory TTL/cap · hot `result_json` bounds  
+- Skill picker · ACL UI · preview guardrails  
+- HITL design-only · Token storage ADR (localStorage accepted)
+
+---
+
+## Upgrade notes
+
+1. `alembic upgrade head` (includes `0014_sprint2_refresh_memory`)  
+2. Re-login after deploy (old refresh tokens without `jti` rows fail refresh)  
+3. Optional env: `RESULT_JSON_MAX_BYTES=262144`, `TABLE_PREVIEW_HOT_MAX_ROWS=50`  
+4. Optional: `WORKSPACE_MEMORY_TTL_DAYS`, `WORKSPACE_MEMORY_MAX_ROWS`
+
+---
+
+## Non-goals in 1.1.0
+
+- Cookie/HttpOnly auth MVP  
+- HITL SQL approval **code**  
+- Semantic Layer / Multi-Agent / Terraform / K8s  
+
+---
+
 # Release Notes — v1.0.0
 
 **Release Title:** Enterprise Data Agent Platform v1.0 — Feature Freeze  

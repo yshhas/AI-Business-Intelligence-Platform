@@ -75,6 +75,17 @@ export function TaskResultPanel({
   const dataPlaneType =
     dataPlane && typeof dataPlane.source_type === 'string' ? dataPlane.source_type : null
   const sqlQuality = asSqlQuality(platform?.sql_quality)
+  const payload =
+    platform?.payload && typeof platform.payload === 'object'
+      ? (platform.payload as Record<string, unknown>)
+      : null
+  const payloadTruncated = payload?.truncated === true
+  const previewTruncated =
+    preview && typeof preview === 'object' && (preview as { truncated?: boolean }).truncated === true
+  const omittedRows =
+    preview && typeof (preview as { omitted_row_count?: unknown }).omitted_row_count === 'number'
+      ? Number((preview as { omitted_row_count: number }).omitted_row_count)
+      : null
 
   return (
     <div className="panel-block">
@@ -117,6 +128,21 @@ export function TaskResultPanel({
 
       {mock ? (
         <Alert variant="warning">Mock runtime result (ANALYSIS_RUNTIME=mock)</Alert>
+      ) : null}
+
+      {payloadTruncated ? (
+        <Alert variant="warning">
+          Hot result payload was truncated for storage bounds (see{' '}
+          <code>platform.payload</code>). Trace execution remains available. Artifact refs point at
+          the persisted (possibly truncated) fields — no silent drop.
+          {omittedRows != null && omittedRows > 0 ? (
+            <>
+              {' '}
+              Preview omitted <code>{omittedRows}</code> row(s).
+            </>
+          ) : null}
+          {previewTruncated ? <> Table preview marked truncated.</> : null}
+        </Alert>
       ) : null}
 
       {summary ? (

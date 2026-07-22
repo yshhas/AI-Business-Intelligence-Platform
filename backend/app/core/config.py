@@ -120,6 +120,10 @@ class Settings(BaseSettings):
     # P1.3 — max rows per workspace (expire first, then LRU by updated_at/hit_count)
     workspace_memory_max_rows: int = 2000
 
+    # P1.4 — hot result_json bounds (Worker persist; no object store in v1.1)
+    result_json_max_bytes: int = 256 * 1024
+    table_preview_hot_max_rows: int = 50
+
     # T-10 — SSE task progress (DB poll; not LLM token stream)
     task_sse_poll_seconds: float = 0.5
     task_sse_heartbeat_seconds: float = 5.0

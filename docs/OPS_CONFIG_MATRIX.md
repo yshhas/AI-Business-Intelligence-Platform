@@ -28,6 +28,8 @@
 | `WORKSPACE_MEMORY_ENABLED` | `true` | Worker | Persist linking synonyms | |
 | `WORKSPACE_MEMORY_TTL_DAYS` | `90` | Worker / API | Synonym row TTL (0 = no expiry on write) | P1.3 |
 | `WORKSPACE_MEMORY_MAX_ROWS` | `2000` | Worker / API | Max rows per workspace (expire then LRU) | P1.3 |
+| `RESULT_JSON_MAX_BYTES` | `262144` | Worker | Hot result_json UTF-8 budget after artifact materialize | P1.4 |
+| `TABLE_PREVIEW_HOT_MAX_ROWS` | `50` | Worker | Max rows kept in hot table_preview | P1.4 |
 | `OIDC_ENABLED` | `false` | API | SSO MVP | Requires issuer/client/redirect |
 | `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` / `OIDC_REDIRECT_URI` | empty | API | OIDC | Endpoints must share issuer host |
 | `OIDC_SCOPES` | `openid email profile` | API | OIDC | |
