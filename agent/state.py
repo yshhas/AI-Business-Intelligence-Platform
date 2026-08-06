@@ -37,6 +37,12 @@ class AnalysisState(TypedDict, total=False):
     column_count_full: int
     column_count_linked: int
     hitl_plan_only: bool
+    hitl_execute_only: bool
+    # P3 repair tracking
+    repair_history: list[dict[str, Any]]
+    repair_class: str | None
+    repair_hint: dict[str, Any] | None
+    repair_stage: str | None
 
 
 ExecuteSelectFn = Callable[[str, int], dict[str, Any]]
@@ -82,6 +88,9 @@ class AnalysisContext:
     cancel_check: CancelCheckFn | None = None
     # HITL H1 — stop after Gate allow; no Data Plane execute
     hitl_plan_only: bool = False
+    # HITL H2 T3 — execute approved SQL only (no LLM regen)
+    hitl_execute_only: bool = False
+    approved_sql: str | None = None
 
 
 @dataclass

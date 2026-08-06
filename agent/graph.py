@@ -32,6 +32,7 @@ def build_graph(ctx: AnalysisContext, sink: Callable[[StepRecord], None] | None 
         nodes.route_after_link,
         {
             "generate_sql": "generate_sql",
+            "validate_sql": "validate_sql",  # HITL execute-only skips generate
             "fail": "fail",
         },
     )

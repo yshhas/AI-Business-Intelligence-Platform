@@ -49,6 +49,9 @@ def run_data_bi_skill(request: RunRequest) -> RunResult:
 
     inner = request.execute_select
     hitl_plan_only = bool(hints.get("hitl_plan_only"))
+    hitl_execute_only = bool(hints.get("hitl_execute_only"))
+    approved_sql = hints.get("approved_sql")
+    approved_sql_text = approved_sql.strip() if isinstance(approved_sql, str) else ""
 
     def execute_select(sql: str, limit: int) -> dict[str, Any]:
         if hitl_plan_only:
@@ -103,6 +106,8 @@ def run_data_bi_skill(request: RunRequest) -> RunResult:
         ),
         cancel_check=request.cancel_check,
         hitl_plan_only=hitl_plan_only,
+        hitl_execute_only=hitl_execute_only,
+        approved_sql=approved_sql_text or None,
     )
 
     def sink(step: StepRecord) -> None:
