@@ -6,6 +6,7 @@ Do not import graph/nodes/skills internals from backend.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,8 @@ from agent.kernel import runtime as kernel_runtime
 from agent.kernel.execution_trace import merge_execution_into_result_json, to_execution_trace
 from agent.kernel.types import RunRequest
 from agent.state import AnalysisContext, AnalysisOutcome, StepRecord
+
+logger = logging.getLogger(__name__)
 
 
 def _sql_quality_from_steps(steps: list[StepRecord]) -> dict[str, Any] | None:
@@ -91,6 +94,8 @@ def context_to_run_request(ctx: AnalysisContext) -> RunRequest:
             "llm_retry_backoff_seconds": ctx.llm_retry_backoff_seconds,
             "llm_retry_backoff_max_seconds": ctx.llm_retry_backoff_max_seconds,
             "hitl_plan_only": bool(ctx.hitl_plan_only),
+            "hitl_execute_only": bool(ctx.hitl_execute_only),
+            "approved_sql": ctx.approved_sql,
         },
         execute_select=ctx.execute_select,
         schema=list(ctx.schema or []),
@@ -101,9 +106,24 @@ def context_to_run_request(ctx: AnalysisContext) -> RunRequest:
 
 def run_analysis(ctx: AnalysisContext) -> AnalysisOutcome:
     """Compatibility Facade: AnalysisContext → kernel.run(skill_id from ctx)."""
+    skill_id = (ctx.skill_id or "data.bi").strip() or "data.bi"
+    has_llm = bool(ctx.llm_api_key)
+    logger.info(
+        "Analysis started skill_id=%s ws=%s source=%s has_llm=%s",
+        skill_id, str(ctx.workspace_id), ctx.source_type, has_llm,
+    )
     request = context_to_run_request(ctx)
     result = kernel_runtime.run(request)
-    return _outcome_from_result(result)
+    outcome = _outcome_from_result(result)
+    if outcome.success:
+        logger.info(
+            "Analysis completed success=True steps=%d has_repair=%s",
+            len(outcome.steps), bool(outcome.result_json.get("repair_history")),
+        )
+    else:
+        err = (outcome.error_message or "")[:200]
+        logger.warning("Analysis failed error=%s", err)
+    return outcome
 
 
 def run_skill(

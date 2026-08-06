@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Callable
 
 from agent.gates.sql_gate import validate_and_normalize_sql
 from agent.llm import LLMError, chat_completion_result
 from agent.prompts_sql import PROMPT_SQL_VERSION, build_text_to_sql_prompts
-from agent.repair_classify import classify_repair_error
+from agent.repair_classify import (
+    RepairHint,
+    classify_repair_error,
+    classify_with_hint,
+)
 from agent.run_control import checkpoint
 from agent.schema_linking import filter_schema_by_columns, link_schema as run_link_schema
 from agent.schemas_llm import parse_sql_draft
 from agent.state import AnalysisContext, AnalysisState, StepRecord
+
+logger = logging.getLogger(__name__)
 
 StepSink = Callable[[StepRecord], None]
 
@@ -37,7 +44,39 @@ def load_context(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
         "status": "running",
         "limitations": [],
         "hitl_plan_only": bool(ctx.hitl_plan_only),
+        "hitl_execute_only": bool(ctx.hitl_execute_only),
     }
+    if ctx.hitl_execute_only:
+        approved = (ctx.approved_sql or "").strip()
+        if not approved:
+            logger.warning("HITL execute-only missing approved SQL")
+            _emit(
+                sink,
+                StepRecord(
+                    node_name="load_context",
+                    status="error",
+                    input_json={"hitl_execute_only": True},
+                    error_message="HITL execute-only: approved SQL snapshot missing",
+                    latency_ms=int((time.perf_counter() - t0) * 1000),
+                ),
+            )
+            return {
+                **state,
+                **out,
+                "status": "failed",
+                "error": "HITL execute-only: approved SQL snapshot missing",
+                "gate_error": "HITL execute-only: approved SQL snapshot missing",
+                "link_status": "failed",
+                "link_reason": "hitl_approved_sql_missing",
+            }
+        out["sql_draft"] = approved
+        out["sql_final"] = approved
+        logger.info("HITL execute-only mode activated")
+        lims = list(out.get("limitations") or [])
+        note = "HITL: execute-only — using approved SQL snapshot (no regenerate)."
+        if note not in lims:
+            lims.append(note)
+        out["limitations"] = lims
     _emit(
         sink,
         StepRecord(
@@ -47,6 +86,7 @@ def load_context(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
             output_json={
                 "duckdb_table": ctx.duckdb_table,
                 "column_count": len(ctx.schema),
+                "hitl_execute_only": bool(ctx.hitl_execute_only),
             },
             latency_ms=int((time.perf_counter() - t0) * 1000),
         ),
@@ -77,6 +117,19 @@ def link_schema(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | 
     err = None
     if result.link_status == "failed":
         err = f"schema linking failed: {result.link_reason or 'unusable schema'}"
+        logger.warning(
+            "Schema linking failed reason=%s", result.link_reason or "unusable",
+        )
+    elif result.link_status == "partial":
+        logger.info(
+            "Schema linking partial linked=%d/%d method=%s",
+            result.column_count_linked, result.column_count_full, result.link_method,
+        )
+    else:
+        logger.info(
+            "Schema linking ok linked=%d/%d method=%s",
+            result.column_count_linked, result.column_count_full, result.link_method,
+        )
 
     _emit(
         sink,
@@ -112,6 +165,24 @@ def link_schema(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | 
 
 def generate_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | None) -> AnalysisState:
     checkpoint(ctx)
+    if ctx.hitl_execute_only or state.get("hitl_execute_only"):
+        msg = "HITL execute-only: SQL regeneration is forbidden"
+        _emit(
+            sink,
+            StepRecord(
+                node_name="generate_sql",
+                status="error",
+                error_message=msg,
+                latency_ms=0,
+            ),
+        )
+        return {
+            **state,
+            "status": "failed",
+            "error": msg,
+            "gate_error": msg,
+            "sql_draft": "",
+        }
     t0 = time.perf_counter()
     table = state.get("duckdb_table") or ctx.duckdb_table
     full_schema = state.get("schema") or ctx.schema
@@ -133,6 +204,7 @@ def generate_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
             question=question,
             gate_error=gate_error,
             link_status=link_status,
+            repair_hint=state.get("repair_hint"),
         )
         status = "ok"
         err = None
@@ -140,6 +212,7 @@ def generate_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
         sql = ""
         status = "error"
         err = str(exc)
+        logger.warning("SQL generation failed error=%s", err[:200])
 
     output: dict[str, Any] = {"prompt_sql_version": PROMPT_SQL_VERSION}
     if sql:
@@ -169,6 +242,11 @@ def generate_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
     )
     if err:
         return {**state, "error": err, "status": "failed", "sql_draft": ""}
+    mode = "llm" if ctx.llm_api_key else "heuristic"
+    logger.info(
+        "SQL generated mode=%s has_repair_hint=%s",
+        mode, bool(state.get("repair_hint")),
+    )
     return {**state, "sql_draft": sql, "gate_error": ""}
 
 
@@ -206,21 +284,64 @@ def validate_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
         ),
     )
     if gate.ok and gate.sql:
+        history = list(state.get("repair_history") or [])
+        if int(state.get("retry_count") or 0) > 0:
+            history.append({
+                "attempt": int(state.get("retry_count") or 0),
+                "sql_draft": draft,
+                "sql_final": gate.sql,
+                "gate_passed": True,
+                "stage": "validate_ok",
+            })
         return {
             **state,
             "gate_ok": True,
             "gate_error": "",
             "sql_final": gate.sql,
+            "repair_history": history,
         }
     retry = int(state.get("retry_count") or 0) + 1
     err = gate.error or "SQL Gate rejected query"
     tagged = f"[{repair_class}] {err}" if repair_class else err
+    hint = classify_with_hint(err, stage="validate")
+    if not hint.is_repairable:
+        logger.error(
+            "SQL Gate reject non-repairable repair_class=%s retry=%d",
+            hint.repair_class, retry,
+        )
+    else:
+        logger.warning(
+            "SQL Gate reject repair_class=%s is_repairable=True retry=%d",
+            hint.repair_class, retry,
+        )
+    history = list(state.get("repair_history") or [])
+    history.append({
+        "attempt": retry,
+        "sql_draft": draft,
+        "error": err,
+        "repair_class": repair_class,
+        "is_repairable": hint.is_repairable,
+        "gate_passed": False,
+        "stage": "validate_fail",
+    })
     return {
         **state,
         "gate_ok": False,
         "gate_error": tagged,
+        "repair_class": repair_class,
+        "repair_stage": "validate",
+        "repair_hint": (
+            {
+                "repair_class": hint.repair_class,
+                "action": hint.action,
+                "is_repairable": hint.is_repairable,
+            }
+            if not gate.ok
+            else None
+        ),
         "retry_count": retry,
         "sql_final": "",
+        "repair_history": history,
     }
 
 
@@ -245,12 +366,36 @@ def execute_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | 
                 latency_ms=int((time.perf_counter() - t0) * 1000),
             ),
         )
-        return {**state, "preview": preview, "error": ""}
+        # Record execute success in repair_history when retry happened
+        history = list(state.get("repair_history") or [])
+        if int(state.get("retry_count") or 0) > 0:
+            history.append({
+                "attempt": int(state.get("retry_count") or 0),
+                "sql_final": sql,
+                "gate_passed": True,
+                "stage": "execute_ok",
+            })
+        return {**state, "preview": preview, "error": "", "repair_history": history}
     except Exception as exc:  # noqa: BLE001
         retry = int(state.get("retry_count") or 0) + 1
         msg = str(exc)
         repair_class = classify_repair_error(msg, stage="execute")
         tagged = f"[{repair_class}] {msg}"
+        logger.warning(
+            "SQL execution failed repair_class=%s retry=%d",
+            repair_class, retry,
+        )
+        hint = classify_with_hint(msg, stage="execute")
+        history = list(state.get("repair_history") or [])
+        history.append({
+            "attempt": retry,
+            "sql_draft": sql,
+            "error": msg,
+            "repair_class": repair_class,
+            "is_repairable": hint.is_repairable,
+            "gate_passed": False,
+            "stage": "execute_fail",
+        })
         _emit(
             sink,
             StepRecord(
@@ -267,6 +412,14 @@ def execute_sql(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | 
             "error": msg,
             "retry_count": retry,
             "gate_error": tagged,
+            "repair_class": repair_class,
+            "repair_stage": "execute",
+            "repair_hint": {
+                "repair_class": hint.repair_class,
+                "action": hint.action,
+                "is_repairable": hint.is_repairable,
+            },
+            "repair_history": history,
         }
 
 
@@ -282,6 +435,11 @@ def summarize(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | No
     summary, llm_meta = _produce_summary(
         ctx, question=question, sql=sql, columns=cols, rows=rows
     )
+    mode = "llm" if (llm_meta and llm_meta.get("status") == "ok") else "heuristic"
+    logger.info(
+        "Summary generated mode=%s row_count=%d",
+        mode, len(rows),
+    )
     limitations = list(state.get("limitations") or [])
     for item in (
         "Single-dataset DuckDB analysis only.",
@@ -292,6 +450,13 @@ def summarize(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink | No
     out_json: dict[str, Any] = {"summary": summary}
     if llm_meta:
         out_json["llm"] = llm_meta
+    # P4: expose repair_history for Eval observability
+    repair_history = state.get("repair_history")
+    if repair_history:
+        out_json["repair_history"] = repair_history
+    retry_count = state.get("retry_count")
+    if retry_count is not None:
+        out_json["retry_count"] = retry_count
     _emit(
         sink,
         StepRecord(
@@ -361,6 +526,13 @@ def build_charts(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
         err = str(exc)
         limitations.append(f"build_charts degraded: {err}")
         chart_out = {"chart_count": 0, "types": []}
+        logger.warning("Chart generation degraded error=%s", err[:150])
+
+    if status == "ok":
+        logger.info(
+            "Charts built chart_count=%d types=%s",
+            len(kept), [c.get("type") for c in kept],
+        )
 
     _emit(
         sink,
@@ -427,6 +599,13 @@ def write_report(state: AnalysisState, *, ctx: AnalysisContext, sink: StepSink |
             "title": report.get("title"),
             "has_markdown": bool(report.get("markdown")),
         }
+        logger.warning("Report generation degraded error=%s", err[:150])
+
+    if status == "ok":
+        logger.info(
+            "Report generated has_markdown=%s chart_count=%d",
+            bool(report.get("markdown")), len(charts),
+        )
 
     _emit(
         sink,
@@ -492,6 +671,7 @@ def _produce_sql(
     question: str,
     gate_error: str,
     link_status: str | None = None,
+    repair_hint: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any] | None]:
     if ctx.llm_api_key:
         allowed = list(ctx.allowed_tables or [table])
@@ -504,6 +684,7 @@ def _produce_sql(
             question=question,
             gate_error=gate_error,
             link_status=link_status,
+            repair_hint=repair_hint,
         )
         result = chat_completion_result(
             api_key=ctx.llm_api_key,
@@ -662,6 +843,8 @@ def _llm_report_markdown(
 def route_after_link(state: AnalysisState) -> str:
     if state.get("link_status") == "failed":
         return "fail"
+    if state.get("hitl_execute_only"):
+        return "validate_sql"
     return "generate_sql"
 
 
@@ -671,6 +854,7 @@ def hitl_plan_done(
     """HITL H1: Gate-allowed SQL snapshot; execution deferred (no plane)."""
     checkpoint(ctx)
     sql = state.get("sql_final") or ""
+    logger.info("HITL plan phase completed — awaiting human approval")
     lims = list(state.get("limitations") or [])
     note = "HITL: plan phase complete — awaiting human approval before execute."
     if note not in lims:
@@ -702,18 +886,48 @@ def route_after_validate(state: AnalysisState) -> str:
         if state.get("hitl_plan_only"):
             return "hitl_plan_done"
         return "execute_sql"
+    # HITL execute-only: never regenerate SQL after Gate deny
+    if state.get("hitl_execute_only"):
+        return "fail"
+    # Non-repairable errors: fail immediately (policy_keyword, unknown, etc.)
+    hint = state.get("repair_hint") or {}
+    if hint.get("is_repairable") is False:
+        return "fail"
     max_retries = int(state.get("max_retries") or 0)
     retry = int(state.get("retry_count") or 0)
     if retry <= max_retries:
+        logger.info(
+            "SQL repair retry triggered repair_class=%s retry=%d/%d",
+            hint.get("repair_class", "unknown"), retry, max_retries,
+        )
         return "generate_sql"
+    logger.warning(
+        "Max retries exceeded repair_class=%s retry=%d/%d",
+        hint.get("repair_class", "unknown"), retry, max_retries,
+    )
     return "fail"
 
 
 def route_after_execute(state: AnalysisState) -> str:
     if state.get("preview") and not state.get("error"):
         return "summarize"
+    # HITL execute-only: never regenerate SQL after execute failure
+    if state.get("hitl_execute_only"):
+        return "fail"
+    # Non-repairable errors: fail immediately
+    hint = state.get("repair_hint") or {}
+    if hint.get("is_repairable") is False:
+        return "fail"
     max_retries = int(state.get("max_retries") or 0)
     retry = int(state.get("retry_count") or 0)
     if retry <= max_retries:
+        logger.info(
+            "SQL execution repair retry triggered repair_class=%s retry=%d/%d",
+            hint.get("repair_class", "unknown"), retry, max_retries,
+        )
         return "generate_sql"
+    logger.warning(
+        "Max execution retries exceeded repair_class=%s retry=%d/%d",
+        hint.get("repair_class", "unknown"), retry, max_retries,
+    )
     return "fail"

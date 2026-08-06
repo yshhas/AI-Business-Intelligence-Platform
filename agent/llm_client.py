@@ -7,6 +7,7 @@ T-07: optional usage / latency metadata on successful calls.
 
 from __future__ import annotations
 
+import logging
 import random
 import time
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ import httpx
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_RETRY_BACKOFF_SECONDS = 0.5
 DEFAULT_RETRY_BACKOFF_MAX_SECONDS = 8.0
+
+logger = logging.getLogger(__name__)
 
 
 class LLMError(Exception):
@@ -172,10 +175,23 @@ class LLMClient:
                     attempts=attempt + 1,
                     usage=usage,
                 )
-            except _RETRYABLE:
+            except _RETRYABLE as exc:
                 if attempt >= self.max_retries:
+                    logger.error(
+                        "LLM max retries exceeded attempts=%d last_status=%s",
+                        attempt + 1,
+                        getattr(exc, "status_code", "?"),
+                    )
                     raise
-                self._sleep(self._backoff_delay(attempt))
+                delay = self._backoff_delay(attempt)
+                logger.warning(
+                    "LLM request retrying attempt=%d/%d delay=%.1fs status=%s",
+                    attempt + 1,
+                    self.max_retries + 1,
+                    delay,
+                    getattr(exc, "status_code", "?"),
+                )
+                self._sleep(delay)
                 attempt += 1
 
     def _chat_once(
