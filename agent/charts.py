@@ -4,36 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent.column_hints import DIM_HINTS, METRIC_HINTS, TEMPORAL_HINTS
 from agent.contracts import ChartSpec, validate_chart
-
-_DIM_HINTS = {
-    "region",
-    "area",
-    "category",
-    "product",
-    "name",
-    "dim",
-    "city",
-    "country",
-    "month",
-    "date",
-    "day",
-    "week",
-}
-_METRIC_HINTS = {
-    "amount",
-    "sales",
-    "revenue",
-    "qty",
-    "quantity",
-    "total",
-    "value",
-    "count",
-    "sum",
-    "avg",
-    "mean",
-}
-_TEMPORAL_HINTS = {"date", "day", "month", "week", "year", "time", "timestamp"}
 
 
 def build_charts_from_preview(
@@ -159,14 +131,14 @@ def _pick_fields(
         else:
             categorical.append(c)
 
-    dim = next((c for c in categorical if c.lower() in _DIM_HINTS), None)
+    dim = next((c for c in categorical if c.lower() in DIM_HINTS), None)
     if dim is None and categorical:
         dim = categorical[0]
     if dim is None and len(columns) >= 2:
         # fallback: first non-numeric-looking as dim
         dim = next((c for c in columns if c not in numeric), columns[0])
 
-    metric = next((c for c in numeric if c.lower() in _METRIC_HINTS), None)
+    metric = next((c for c in numeric if c.lower() in METRIC_HINTS), None)
     if metric is None and numeric:
         metric = numeric[0]
     if metric is None:
@@ -198,11 +170,11 @@ def _pick_type(*, question: str, dim: str) -> str:
 
 def _is_temporal_name(name: str) -> bool:
     n = name.lower()
-    return any(h in n for h in _TEMPORAL_HINTS)
+    return any(h in n for h in TEMPORAL_HINTS)
 
 
 def _column_looks_numeric(col: str, rows: list[dict[str, Any]]) -> bool:
-    if col.lower() in _METRIC_HINTS:
+    if col.lower() in METRIC_HINTS:
         return True
     nums = 0
     seen = 0
