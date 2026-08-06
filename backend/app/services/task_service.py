@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -669,6 +669,126 @@ def reject_task(
         logger,
         logging.INFO,
         "hitl_rejected",
+        run_id=task.id,
+        status=task.status,
+        failure_class=task.failure_class,
+    )
+    return task
+
+
+def approve_task(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    task_id: UUID,
+    user_id: UUID,
+    member_role: str,
+    member: object | None = None,
+) -> AnalysisTask:
+    """HITL H2 T1: approve while awaiting_approval → set resume flag + enqueue wake.
+
+    Does **not** flip status to running, does **not** execute SQL / Skill / Plane.
+    Worker CAS awaiting→running + execute is T2.
+    """
+    settings = get_settings()
+    if not settings.hitl_sql_approval_enabled:
+        raise TaskServiceError(
+            "HITL SQL approval is disabled",
+            status_code=409,
+        )
+
+    task = get_task(db, workspace_id=workspace_id, task_id=task_id)
+    if task is None:
+        raise TaskServiceError("Task not found", status_code=404)
+
+    workspace = db.get(Workspace, workspace_id)
+    actor = member
+    if actor is None:
+        actor = type("M", (), {"role": member_role})()
+    try:
+        # Same bar as cancel / reject (creator or owner) — H2-L2
+        perm.require(
+            actor,  # type: ignore[arg-type]
+            perm.RUN_CANCEL,
+            task=task,
+            workspace=workspace,
+            user_id=user_id,
+        )
+    except PermissionError as exc:
+        raise TaskServiceError(str(exc), status_code=exc.status_code) from exc
+
+    if task.status != rl.STATUS_AWAITING_APPROVAL:
+        raise TaskServiceError(
+            f"Cannot approve run in status={task.status}",
+            status_code=409,
+        )
+    if task.hitl_resume_requested:
+        raise TaskServiceError(
+            "Resume already requested for this run",
+            status_code=409,
+        )
+
+    # CAS: only one approve wins while still awaiting and not yet flagged
+    result = db.execute(
+        update(AnalysisTask)
+        .where(
+            AnalysisTask.id == task_id,
+            AnalysisTask.workspace_id == workspace_id,
+            AnalysisTask.status == rl.STATUS_AWAITING_APPROVAL,
+            AnalysisTask.hitl_resume_requested.is_(False),
+        )
+        .values(hitl_resume_requested=True)
+    )
+    if result.rowcount == 0:
+        db.rollback()
+        fresh = get_task(db, workspace_id=workspace_id, task_id=task_id)
+        if fresh is None:
+            raise TaskServiceError("Task not found", status_code=404)
+        if fresh.status != rl.STATUS_AWAITING_APPROVAL:
+            raise TaskServiceError(
+                f"Cannot approve run in status={fresh.status}",
+                status_code=409,
+            )
+        raise TaskServiceError(
+            "Resume already requested for this run",
+            status_code=409,
+        )
+
+    # Keep ORM in sync with CAS; status stays awaiting_approval (Worker flips in T2)
+    task.hitl_resume_requested = True
+    base = dict(task.result_json or {})
+    platform = dict(base.get("platform") or {})
+    hitl = dict(platform.get("hitl") or {})
+    hitl.update(
+        {
+            "required": True,
+            "phase": "awaiting",
+            "decision": "approved",
+            "resume_requested": True,
+            "approved_by": str(user_id),
+        }
+    )
+    platform["hitl"] = hitl
+    base["platform"] = platform
+    task.result_json = base
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    try:
+        task_queue.enqueue_hitl_resume(task.id)
+    except Exception as exc:  # noqa: BLE001
+        # Flag is durable; T2 may still pick up via hitl_resume_requested.
+        logger.warning(
+            "HITL resume enqueue failed for %s (flag set): %s",
+            task.id,
+            exc,
+        )
+
+    log_run(
+        logger,
+        logging.INFO,
+        "hitl_approve_enqueued",
         run_id=task.id,
         status=task.status,
         failure_class=task.failure_class,

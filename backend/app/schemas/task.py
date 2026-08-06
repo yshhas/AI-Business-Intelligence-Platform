@@ -35,6 +35,7 @@ class TaskOut(BaseModel):
     llm_total_tokens: int | None = None
     require_sql_approval: bool = False
     approval_requested_at: datetime | None = None
+    hitl_resume_requested: bool = False
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None

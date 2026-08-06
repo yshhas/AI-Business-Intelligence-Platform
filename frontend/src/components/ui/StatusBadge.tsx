@@ -25,8 +25,13 @@ const STATUS_TONE_MAP: Record<string, StatusTone> = {
   cancelled: 'cancelled',
   canceled: 'cancelled',
   denied: 'failed',
+  awaiting_approval: 'warning',
   unavailable: 'warning',
   warning: 'warning',
+}
+
+const STATUS_LABEL_MAP: Record<string, string> = {
+  awaiting_approval: 'Awaiting approval',
 }
 
 function resolveTone(status: string, tone?: StatusTone): StatusTone {
@@ -54,13 +59,15 @@ export function StatusBadge({
   ...rest
 }: StatusBadgeProps) {
   const resolved = resolveTone(status, tone)
+  const key = status.trim().toLowerCase()
+  const display = label ?? STATUS_LABEL_MAP[key] ?? status
   return (
     <span
       className={cx('status-badge', `status-badge--${resolved}`, className)}
       {...rest}
     >
       {showDot ? <span className="status-badge__dot" aria-hidden /> : null}
-      <span>{label ?? status}</span>
+      <span>{display}</span>
     </span>
   )
 }

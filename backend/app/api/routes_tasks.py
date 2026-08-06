@@ -354,7 +354,7 @@ def reject_task(
     ctx: tuple[User, WorkspaceMember] = Depends(require_workspace_member),
     db: Session = Depends(get_db),
 ) -> TaskOut:
-    """HITL H1: reject awaiting_approval (Approve→Execute is H2 — no approve route)."""
+    """HITL H1: reject awaiting_approval (no Data Plane execute)."""
     user, member = ctx
     try:
         task = task_service.reject_task(
@@ -365,6 +365,29 @@ def reject_task(
             member_role=member.role,
             member=member,
             reason=(body.reason if body else None),
+        )
+    except TaskServiceError as exc:
+        raise _http_error(exc) from exc
+    return TaskOut.model_validate(task)
+
+
+@router.post("/{task_id}/approve", response_model=TaskOut)
+def approve_task(
+    workspace_id: UUID,
+    task_id: UUID,
+    ctx: tuple[User, WorkspaceMember] = Depends(require_workspace_member),
+    db: Session = Depends(get_db),
+) -> TaskOut:
+    """HITL H2 T1: approve awaiting_approval → resume enqueue (Worker execute is T2)."""
+    user, member = ctx
+    try:
+        task = task_service.approve_task(
+            db,
+            workspace_id=workspace_id,
+            task_id=task_id,
+            user_id=user.id,
+            member_role=member.role,
+            member=member,
         )
     except TaskServiceError as exc:
         raise _http_error(exc) from exc

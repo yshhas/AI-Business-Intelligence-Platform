@@ -19,6 +19,7 @@ FAILURE_TIMEOUT = "timeout"
 FAILURE_CANCELLED = "cancelled"
 FAILURE_RUNTIME_RECLAIMED = "runtime_reclaimed"
 FAILURE_HITL_REJECTED = "hitl_rejected"
+FAILURE_HITL_SNAPSHOT = "hitl_snapshot_mismatch"
 FAILURE_INTERNAL = "internal_error"
 FAILURE_UNKNOWN = "unknown"
 
@@ -39,6 +40,10 @@ def classify_exception(exc: BaseException) -> str:
         return FAILURE_POLICY
     if "forbidden keyword" in msg or "not in allowlist" in msg:
         return FAILURE_POLICY
+    if "snapshot mismatch" in msg or "sql_sha256" in msg or "sql_snapshot" in msg:
+        return FAILURE_HITL_SNAPSHOT
+    if "hitl execute-only: approved sql snapshot missing" in msg:
+        return FAILURE_HITL_SNAPSHOT
     if msg.startswith("connector error:") or "connector error:" in msg:
         return FAILURE_CONNECTOR
     return FAILURE_SKILL

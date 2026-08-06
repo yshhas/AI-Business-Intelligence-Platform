@@ -55,11 +55,41 @@ def run_agent_analysis(
     schema = list(dataset.schema_json or [])
     default_limit = settings.sql_default_limit
     skill_id = (task.skill_id or "data.bi").strip() or "data.bi"
+    prior_platform = (
+        (task.result_json or {}).get("platform")
+        if isinstance(task.result_json, dict)
+        else {}
+    ) or {}
+    prior_hitl = (
+        prior_platform.get("hitl") if isinstance(prior_platform.get("hitl"), dict) else {}
+    )
+    hitl_execute_only = bool(
+        prior_hitl.get("phase") == "execute" and prior_hitl.get("decision") == "approved"
+    )
+    # Plan-only only on first pass; execute phase must not re-park / forbid plane
     hitl_plan_only = bool(
         settings.hitl_sql_approval_enabled
         and task.require_sql_approval
         and skill_id == "data.bi"
+        and not hitl_execute_only
     )
+    approved_sql = None
+    if hitl_execute_only:
+        from agent.hitl_snapshot import (
+            approved_sql_from_verified,
+            verify_sql_snapshot,
+        )
+
+        # Defense in depth: Worker already verified; re-check before Skill
+        snap = verify_sql_snapshot(
+            task.result_json if isinstance(task.result_json, dict) else {}
+        )
+        if not snap.ok:
+            raise AgentAnalysisError(
+                snap.message,
+                result_json=dict(task.result_json or {}),
+            )
+        approved_sql = approved_sql_from_verified(snap)
 
     try:
         allowed = dataset_service.allowed_tables_for(
@@ -151,6 +181,8 @@ def run_agent_analysis(
         llm_retry_backoff_max_seconds=settings.llm_retry_backoff_max_seconds,
         cancel_check=cancel_check,
         hitl_plan_only=hitl_plan_only,
+        hitl_execute_only=hitl_execute_only,
+        approved_sql=approved_sql,
     )
 
     try:
@@ -214,6 +246,18 @@ def run_agent_analysis(
         meta = registry.get_skill_meta(str(platform.get("skill_id") or skill_id))
         if meta:
             platform["skill_version"] = meta.version
+    if prior_hitl:
+        # Preserve HITL lineage across execute; mark executed when Skill succeeded
+        merged_hitl = dict(prior_hitl)
+        if hitl_execute_only:
+            merged_hitl.update(
+                {
+                    "phase": "execute",
+                    "decision": "approved",
+                    "executed": bool(outcome.success),
+                }
+            )
+        platform["hitl"] = merged_hitl
     result["platform"] = platform
 
     if (

@@ -98,9 +98,11 @@ cd backend
 ```
 
 - Always: alembic head + Kernel / skill lifecycle / **data.profile** / **wave3 platform** / task events / docker compose / M2 / M4 / M5 / M6 / E3 / auth / rate / metrics / openapi / repair / cost budget / schema linking  
+- **HITL:** H1 + H2 suite (`t1_approve_api` → `t2_resume_cas` → `t3_execute` → `t4_mock_runtime` → `t5_snapshot`); gate resets in-flight capacity between H2 smokes  
 - Evals: **core** + **quality** + **profile** (regression vs baselines when present)  
 - **M3:** only if `POSTGRES_RO_DSN` is set; otherwise skipped  
-- Optional planes: see [DATA_PLANE.md](./DATA_PLANE.md) · [OIDC.md](./OIDC.md) · [MCP.md](./MCP.md)
+- Optional planes: see [DATA_PLANE.md](./DATA_PLANE.md) · [OIDC.md](./OIDC.md) · [MCP.md](./MCP.md)  
+- On failure: look for `GATE FAIL: stage=<label>` (stage names identify the failing smoke)
 
 ### CI (T-13)
 

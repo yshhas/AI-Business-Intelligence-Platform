@@ -3,11 +3,34 @@ import type { ArtifactList, ExecutionTrace, RunArtifact, StepList, Task, TaskLis
 
 export function createTask(
   workspaceId: string,
-  body: { dataset_id: string; question: string; skill_id?: string },
+  body: {
+    dataset_id: string
+    question: string
+    skill_id?: string
+    require_sql_approval?: boolean
+  },
 ): Promise<Task> {
   return apiRequest<Task>(`/api/v1/workspaces/${workspaceId}/tasks`, {
     method: 'POST',
     body,
+  })
+}
+
+export function approveTask(workspaceId: string, taskId: string): Promise<Task> {
+  return apiRequest<Task>(`/api/v1/workspaces/${workspaceId}/tasks/${taskId}/approve`, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+export function rejectTask(
+  workspaceId: string,
+  taskId: string,
+  body?: { reason?: string },
+): Promise<Task> {
+  return apiRequest<Task>(`/api/v1/workspaces/${workspaceId}/tasks/${taskId}/reject`, {
+    method: 'POST',
+    body: body ?? {},
   })
 }
 

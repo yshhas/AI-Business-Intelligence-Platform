@@ -24,8 +24,24 @@ export const FAILURE_CLASS_LABELS: Record<string, string> = {
   timed_out: 'Timed out',
   timeout: 'Timed out',
   runtime_reclaimed: 'Runtime reclaimed',
+  hitl_rejected: 'Rejected (HITL)',
+  hitl_snapshot_mismatch: 'SQL snapshot mismatch',
   internal_error: 'Internal error',
   unknown: 'Unknown failure',
+}
+
+export const STATUS_LABELS: Record<string, string> = {
+  awaiting_approval: 'Awaiting approval',
+  pending: 'Pending',
+  running: 'Running',
+  succeeded: 'Succeeded',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+  timed_out: 'Timed out',
+}
+
+export function statusLabel(status: string): string {
+  return STATUS_LABELS[status] || status
 }
 
 export type SqlQuality = {

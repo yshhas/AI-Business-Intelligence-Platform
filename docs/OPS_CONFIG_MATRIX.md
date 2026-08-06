@@ -30,7 +30,8 @@
 | `WORKSPACE_MEMORY_MAX_ROWS` | `2000` | Worker / API | Max rows per workspace (expire then LRU) | P1.3 |
 | `RESULT_JSON_MAX_BYTES` | `262144` | Worker | Hot result_json UTF-8 budget after artifact materialize | P1.4 |
 | `TABLE_PREVIEW_HOT_MAX_ROWS` | `50` | Worker | Max rows kept in hot table_preview | P1.4 |
-| `HITL_SQL_APPROVAL_ENABLED` | `false` | API · Worker | Kill-switch for opt-in SQL approval pause (H1); Approve→Execute is H2 | Default off |
+| `HITL_SQL_APPROVAL_ENABLED` | `false` | API · Worker | Kill-switch for opt-in SQL approval (H1 park / H2 approve); off → approve/reject 409 | Default off |
+| `HITL_RESUME_QUEUE_KEY` | `aibi:hitl_resume` | API (enqueue) · Worker (T2) | Dedicated Approve resume wake list (H2-L6); not the main analysis queue | T1 enqueue only |
 | `OIDC_ENABLED` | `false` | API | SSO MVP | Requires issuer/client/redirect |
 | `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` / `OIDC_REDIRECT_URI` | empty | API | OIDC | Endpoints must share issuer host |
 | `OIDC_SCOPES` | `openid email profile` | API | OIDC | |

@@ -15,6 +15,11 @@ export type Task = {
   source_type?: string | null
   policy_denied?: boolean
   llm_total_tokens?: number | null
+  /** HITL: opt-in flag from create (may be forced false by server kill-switch). */
+  require_sql_approval?: boolean
+  approval_requested_at?: string | null
+  /** HITL H2: approve enqueued; status may still be awaiting_approval until worker CAS. */
+  hitl_resume_requested?: boolean
   created_at: string
   started_at: string | null
   finished_at: string | null

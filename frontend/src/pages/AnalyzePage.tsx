@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { listDatasets } from '../api/datasets'
 import {
+  approveTask,
   createTask,
   getTask,
   getTaskSteps,
@@ -9,6 +10,7 @@ import {
   listTaskArtifacts,
   getTaskArtifact,
   cancelTask,
+  rejectTask,
 } from '../api/tasks'
 import {
   mergeTaskBrief,
@@ -16,6 +18,7 @@ import {
   subscribeTaskEventsWithReconnect,
 } from '../api/taskEvents'
 import { ApiError } from '../api/client'
+import { HitlApprovalPanel } from '../components/HitlApprovalPanel'
 import { TaskResultPanel } from '../components/TaskResultPanel'
 import { ExecutionTracePanel } from '../components/ExecutionTracePanel'
 import { ArtifactsPanel } from '../components/ArtifactsPanel'
@@ -30,7 +33,13 @@ import {
   StatusBadge,
   Textarea,
 } from '../components/ui'
-import { getStoredWorkspace } from '../stores/authStore'
+import { getStoredUser, getStoredWorkspace } from '../stores/authStore'
+import {
+  canActOnHitl,
+  isActiveRunStatus,
+  isAwaitingApproval,
+  isHitlDisabledError,
+} from '../lib/hitl'
 import {
   failureClassLabel,
   friendlySubmitError,
@@ -41,12 +50,14 @@ import type { ExecutionTrace, RunArtifact, Task, TaskStep } from '../types/task'
 
 export function AnalyzePage() {
   const workspace = getStoredWorkspace()
+  const user = getStoredUser()
   if (!workspace?.id) return <Navigate to="/app" replace />
   return (
     <AnalyzePageInner
       workspaceId={workspace.id}
       workspaceName={workspace.name}
       role={workspace.role || 'owner'}
+      userId={user?.id ?? null}
     />
   )
 }
@@ -55,15 +66,18 @@ function AnalyzePageInner({
   workspaceId,
   workspaceName,
   role,
+  userId,
 }: {
   workspaceId: string
   workspaceName: string
   role: string
+  userId: string | null
 }) {
   const canRun = role === 'owner' || role === 'analyst'
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [datasetId, setDatasetId] = useState('')
   const [skillId, setSkillId] = useState<'data.bi' | 'data.profile'>('data.bi')
+  const [requireSqlApproval, setRequireSqlApproval] = useState(false)
   const [question, setQuestion] = useState('')
   const [task, setTask] = useState<Task | null>(null)
   const [steps, setSteps] = useState<TaskStep[]>([])
@@ -72,8 +86,11 @@ function AnalyzePageInner({
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   const [artifactDetail, setArtifactDetail] = useState<RunArtifact | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [hitlError, setHitlError] = useState<string | null>(null)
+  const [hitlInfo, setHitlInfo] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [hitlBusy, setHitlBusy] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -95,7 +112,7 @@ function AnalyzePageInner({
     }
   }, [workspaceId])
 
-  // T-10: SSE progress while pending/running; poll fallback if SSE fails
+  // T-10 / H3: SSE while pending|running|awaiting_approval; poll fallback if SSE fails
   useEffect(() => {
     if (!task?.id) return
     const taskId = task.id
@@ -103,13 +120,18 @@ function AnalyzePageInner({
     let pollId: number | null = null
     const ac = new AbortController()
 
-    async function loadTerminalExtras() {
+    async function refreshFullTask() {
       try {
         const t = await getTask(workspaceId, taskId)
         if (!cancelled) setTask(t)
+        return t
       } catch {
-        // ignore
+        return null
       }
+    }
+
+    async function loadTerminalExtras() {
+      await refreshFullTask()
       try {
         const ex = await getTaskExecution(workspaceId, taskId)
         if (!cancelled) setTrace(ex)
@@ -124,6 +146,19 @@ function AnalyzePageInner({
       }
     }
 
+    async function onActiveStatus(status: string) {
+      // SSE brief omits result_json / hitl fields — refetch when entering wait.
+      if (isAwaitingApproval(status)) {
+        await refreshFullTask()
+        try {
+          const ex = await getTaskExecution(workspaceId, taskId)
+          if (!cancelled) setTrace(ex)
+        } catch {
+          // soft-sealed trace may already exist at park
+        }
+      }
+    }
+
     function startPollFallback() {
       if (pollId != null || cancelled) return
       pollId = window.setInterval(async () => {
@@ -134,7 +169,14 @@ function AnalyzePageInner({
           const s = await getTaskSteps(workspaceId, taskId)
           if (cancelled) return
           setSteps(s.items)
-          if (t.status !== 'pending' && t.status !== 'running') {
+          if (isAwaitingApproval(t.status)) {
+            try {
+              const ex = await getTaskExecution(workspaceId, taskId)
+              if (!cancelled) setTrace(ex)
+            } catch {
+              // ignore
+            }
+          } else if (!isActiveRunStatus(t.status)) {
             await loadTerminalExtras()
           }
         } catch {
@@ -148,9 +190,12 @@ function AnalyzePageInner({
       try {
         const latest = await getTask(workspaceId, taskId)
         if (cancelled) return
-        if (latest.status !== 'pending' && latest.status !== 'running') {
-          setTask(latest)
+        setTask(latest)
+        if (!isActiveRunStatus(latest.status)) {
           return
+        }
+        if (isAwaitingApproval(latest.status)) {
+          await onActiveStatus(latest.status)
         }
       } catch {
         return
@@ -163,6 +208,7 @@ function AnalyzePageInner({
             if (ev.event === 'snapshot') {
               setTask((prev) => (prev ? mergeTaskBrief(prev, ev.data.task) : prev))
               setSteps(ev.data.steps.map(stepFromEvent))
+              void onActiveStatus(ev.data.task.status)
             } else if (ev.event === 'step') {
               const next = stepFromEvent(ev.data.step)
               setSteps((prev) => {
@@ -171,6 +217,7 @@ function AnalyzePageInner({
               })
             } else if (ev.event === 'status') {
               setTask((prev) => (prev ? mergeTaskBrief(prev, ev.data.task) : prev))
+              void onActiveStatus(ev.data.task.status)
             } else if (ev.event === 'terminal') {
               setTask((prev) => (prev ? mergeTaskBrief(prev, ev.data.task) : prev))
               void loadTerminalExtras()
@@ -211,18 +258,27 @@ function AnalyzePageInner({
     }
     setSubmitting(true)
     setError(null)
+    setHitlError(null)
+    setHitlInfo(null)
     setSteps([])
     setTrace(null)
     setArtifacts([])
     setSelectedArtifactId(null)
     setArtifactDetail(null)
     try {
+      const wantHitl = skillId === 'data.bi' && requireSqlApproval
       const t = await createTask(workspaceId, {
         dataset_id: datasetId,
         question: question.trim(),
         skill_id: skillId,
+        require_sql_approval: wantHitl || undefined,
       })
       setTask(t)
+      if (wantHitl && !t.require_sql_approval) {
+        setHitlInfo(
+          'SQL approval is unavailable (server kill-switch off or skill ignored the flag). This run will not pause for approval.',
+        )
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setError(friendlySubmitError(err))
@@ -249,6 +305,7 @@ function AnalyzePageInner({
     if (!task) return
     setCancelling(true)
     setError(null)
+    setHitlError(null)
     try {
       const t = await cancelTask(workspaceId, task.id)
       setTask(t)
@@ -259,7 +316,51 @@ function AnalyzePageInner({
     }
   }
 
+  async function onHitlApprove() {
+    if (!task) return
+    setHitlBusy(true)
+    setHitlError(null)
+    try {
+      const t = await approveTask(workspaceId, task.id)
+      setTask(t)
+    } catch (err) {
+      if (err instanceof ApiError && isHitlDisabledError(err)) {
+        setHitlError('SQL approval is disabled on the server (kill-switch off).')
+      } else {
+        setHitlError(err instanceof ApiError || err instanceof Error ? err.message : 'Approve failed')
+      }
+    } finally {
+      setHitlBusy(false)
+    }
+  }
+
+  async function onHitlReject(reason?: string) {
+    if (!task) return
+    setHitlBusy(true)
+    setHitlError(null)
+    try {
+      const t = await rejectTask(workspaceId, task.id, reason ? { reason } : undefined)
+      setTask(t)
+      try {
+        setTrace(await getTaskExecution(workspaceId, t.id))
+      } catch {
+        // ignore
+      }
+    } catch (err) {
+      if (err instanceof ApiError && isHitlDisabledError(err)) {
+        setHitlError('SQL approval is disabled on the server (kill-switch off).')
+      } else {
+        setHitlError(err instanceof ApiError || err instanceof Error ? err.message : 'Reject failed')
+      }
+    } finally {
+      setHitlBusy(false)
+    }
+  }
+
+  const isActive = task ? isActiveRunStatus(task.status) : false
   const isRunning = task?.status === 'pending' || task?.status === 'running'
+  const awaiting = task ? isAwaitingApproval(task.status) : false
+  const hitlCanAct = task ? canActOnHitl(task, userId, role) : false
 
   return (
     <section className="workspace-page">
@@ -327,6 +428,17 @@ function AnalyzePageInner({
                 disabled={!canRun}
               />
             </label>
+            {skillId === 'data.bi' ? (
+              <label className="filter-check">
+                <input
+                  type="checkbox"
+                  checked={requireSqlApproval}
+                  onChange={(e) => setRequireSqlApproval(e.target.checked)}
+                  disabled={!canRun}
+                />
+                Require SQL approval before execute (HITL)
+              </label>
+            ) : null}
             <div className="analyze-command__actions">
               <Button
                 type="submit"
@@ -341,6 +453,7 @@ function AnalyzePageInner({
       </Card>
 
       {error ? <Alert variant="error">{error}</Alert> : null}
+      {hitlInfo ? <Alert variant="warning">{hitlInfo}</Alert> : null}
 
       {task ? (
         <Card>
@@ -355,8 +468,12 @@ function AnalyzePageInner({
                         {failureClassLabel(task.failure_class)}
                       </span>
                     ) : null}
-                    {isRunning ? (
-                      <span className="caption">Live progress via SSE</span>
+                    {isActive ? (
+                      <span className="caption">
+                        {awaiting
+                          ? 'Waiting for SQL approval (live via SSE)'
+                          : 'Live progress via SSE'}
+                      </span>
                     ) : null}
                   </div>
                   <p className="run-panel__question">{task.question}</p>
@@ -387,6 +504,11 @@ function AnalyzePageInner({
                     plane <code>{task.source_type}</code>
                   </span>
                 ) : null}
+                {task.require_sql_approval ? (
+                  <span>
+                    hitl <code>require_sql_approval</code>
+                  </span>
+                ) : null}
                 {task.llm_total_tokens != null ? (
                   <span>
                     tokens <code>{task.llm_total_tokens}</code>
@@ -401,6 +523,18 @@ function AnalyzePageInner({
                 <Alert variant="error">{task.error_message}</Alert>
               ) : null}
 
+              {awaiting ? (
+                <HitlApprovalPanel
+                  task={task}
+                  canAct={hitlCanAct}
+                  busy={hitlBusy || cancelling}
+                  actionError={hitlError}
+                  onApprove={onHitlApprove}
+                  onReject={onHitlReject}
+                  onCancel={onCancel}
+                />
+              ) : null}
+
               <div className="section-block">
                 <h3 className="section-block__title">Execution steps</h3>
                 <p className="caption">
@@ -408,7 +542,11 @@ function AnalyzePageInner({
                 </p>
                 {steps.length === 0 ? (
                   <p className="caption">
-                    {isRunning ? 'Waiting for worker…' : 'No steps recorded.'}
+                    {isActive
+                      ? awaiting
+                        ? 'Plan complete — waiting for approval…'
+                        : 'Waiting for worker…'
+                      : 'No steps recorded.'}
                   </p>
                 ) : (
                   <ol className="step-list">
@@ -428,8 +566,10 @@ function AnalyzePageInner({
                 />
                 {!trace ? (
                   <p className="caption">
-                    {isRunning
-                      ? 'Trace will appear when the run reaches a terminal state.'
+                    {isActive
+                      ? awaiting
+                        ? 'Plan-phase Trace (if available) loads while waiting for approval.'
+                        : 'Trace will appear when the run reaches a terminal state.'
                       : 'No execution trace for this run.'}
                   </p>
                 ) : null}

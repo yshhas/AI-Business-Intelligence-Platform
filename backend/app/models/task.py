@@ -56,6 +56,10 @@ class AnalysisTask(Base):
     approval_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # HITL H2 T1 — Approve API sets this + resume enqueue; Worker CAS→running is T2
+    hitl_resume_requested: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
 
     workspace: Mapped["Workspace"] = relationship(back_populates="analysis_tasks")
     dataset: Mapped["Dataset"] = relationship(back_populates="analysis_tasks")

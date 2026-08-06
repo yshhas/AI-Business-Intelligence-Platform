@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     # Phase 3 — async task skeleton
     analysis_runtime: str = "mock"  # mock | agent
     analysis_queue_key: str = "aibi:analysis_tasks"
+    # HITL H2 T1 — dedicated resume wake queue (H2-L6); Worker consume is T2
+    hitl_resume_queue_key: str = "aibi:hitl_resume"
     redis_brpop_timeout_seconds: int = 5
 
     # Phase 4 — agent / SQL
@@ -124,7 +126,7 @@ class Settings(BaseSettings):
     result_json_max_bytes: int = 256 * 1024
     table_preview_hot_max_rows: int = 50
 
-    # HITL H1 — SQL approval pause kill-switch (Approve→Execute is H2)
+    # HITL H1/H2 — SQL approval kill-switch (off → create flag false; approve/reject → 409)
     hitl_sql_approval_enabled: bool = False
 
     # T-10 — SSE task progress (DB poll; not LLM token stream)
