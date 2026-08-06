@@ -1,0 +1,250 @@
+# Safety suite — SQL injection, Gate bypass, output security regression.
+# All cases are deterministic (no LLM).  Designed for CI-blocking.
+suite: safety
+version: 1
+defaults:
+  plane: file
+  skill_id: data.bi
+  max_retries: 0
+  default_limit: 200
+  allow_heuristic_sql: false
+  fixture: fixtures/file/sales_wide.csv
+
+cases:
+  # ── SQL Injection Attacks (expect deny) ──────────────────────────────
+
+  - id: safety.inject.drop_table
+    mode: sql_inject
+    sql: "DROP TABLE {{table}}"
+    tags: [attack, ddl, regression]
+    expect:
+      gate: deny
+      success: false
+      failure_class: policy_denied
+      must_not_execute: true
+
+  - id: safety.inject.delete_all
+    mode: sql_inject
+    sql: "DELETE FROM {{table}}"
+    tags: [attack, dml, regression]
+    expect:
+      gate: deny
+      success: false
+      failure_class: policy_denied
+      must_not_execute: true
+
+  - id: safety.inject.insert_data
+    mode: sql_inject
+    sql: "INSERT INTO {{table}} (region, product, amount) VALUES ('X', 'Y', 1)"
+    tags: [attack, dml, regression]
+    expect:
+      gate: deny
+      success: false
+      failure_class: policy_denied
+      must_not_execute: true
+
+  - id: safety.inject.update_data
+    mode: sql_inject
+    sql: "UPDATE {{table}} SET amount = 0"
+    tags: [attack, dml, regression]
+    expect:
+      gate: deny
+      success: false
+      failure_class: policy_denied
+      must_not_execute: true
+
+  - id: safety.inject.multi_stmt
+    mode: sql_inject
+    sql: "SELECT 1 FROM {{table}}; DROP TABLE {{table}}"
+    tags: [attack, multi_stmt, regression]
+    expect:
+      gate: deny
+      success: false
+      failure_class: policy_denied
+      must_not_execute: true
+
+  - id: safety.inject.union_inject
+    mode: sql_inject
+    sql: "SELECT region, amount FROM {{table}} UNION SELECT password, 1 FROM users"
+    tags: [attack, union, bypass]
+    expect:
+      gate: deny
+      success: false
+      must_not_execute: true
+
+  - id: safety.inject.subquery_exfil
+    mode: sql_inject
+    sql: "SELECT * FROM {{table}} WHERE region = (SELECT secret FROM other_table)"
+    tags: [attack, subquery, bypass]
+    expect:
+      gate: deny
+      success: false
+      must_not_execute: true
+
+  - id: safety.inject.alter_table
+    mode: sql_inject
+    sql: "ALTER TABLE {{table}} ADD COLUMN injected TEXT"
+    tags: [attack, ddl, bypass]
+    expect:
+      gate: deny
+      success: false
+      failure_class: policy_denied
+      must_not_execute: true
+
+  - id: safety.inject.truncate
+    mode: sql_inject
+    sql: "TRUNCATE TABLE {{table}}"
+    tags: [attack, ddl, bypass]
+    expect:
+      gate: deny
+      success: false
+      failure_class: policy_denied
+      must_not_execute: true
+
+  # ── SQL Injection via obfuscation ────────────────────────────────────
+
+  - id: safety.obfuscate.case_confusion
+    mode: sql_inject
+    sql: "SeLeCt * FrOm {{table}}"
+    tags: [obfuscation, case, benign]
+    expect:
+      gate: allow
+      success: true
+      execute: true
+
+  - id: safety.obfuscate.extra_spaces
+    mode: sql_inject
+    sql: "SELECT    *    FROM    {{table}}"
+    tags: [obfuscation, whitespace, benign]
+    expect:
+      gate: allow
+      success: true
+      execute: true
+
+  # ── CTE / WITH scenarios ─────────────────────────────────────────────
+
+  - id: safety.cte.valid_with
+    mode: sql_inject
+    sql: "WITH cte AS (SELECT region, amount FROM {{table}}) SELECT * FROM cte"
+    tags: [cte, regression, known_issue, issue_2]
+    expect:
+      # Issue 2: CTE alias 'cte' extracted by _extract_table_names regex
+      # is not in allowlist → gate denies.  Documented in TESTING_KNOWN_ISSUES.md.
+      gate: deny
+      success: false
+      must_not_execute: true
+
+  - id: safety.cte.cte_with_drop
+    mode: sql_inject
+    sql: "WITH cte AS (SELECT 1) DROP TABLE {{table}}"
+    tags: [cte, attack]
+    expect:
+      gate: deny
+      success: false
+      must_not_execute: true
+
+  # ── Comment bypass attempts ──────────────────────────────────────────
+
+  - id: safety.comment.dash_comment
+    mode: sql_inject
+    sql: "SELECT * FROM {{table}} -- harmless comment"
+    tags: [comment, benign]
+    expect:
+      gate: allow
+      success: true
+      execute: true
+
+  - id: safety.comment.block_comment
+    mode: sql_inject
+    sql: "SELECT * FROM {{table}} /* block comment */"
+    tags: [comment, benign]
+    expect:
+      gate: allow
+      success: true
+      execute: true
+
+  - id: safety.comment.drop_in_comment
+    mode: sql_inject
+    sql: "SELECT * FROM {{table}} -- DROP TABLE {{table}}"
+    tags: [comment, regression, known_issue, issue_3]
+    expect:
+      # Issue 3: Naive regex matches 'DROP' inside SQL comments (false positive).
+      # Gate currently denies this.  Documented in TESTING_KNOWN_ISSUES.md.
+      gate: deny
+      success: false
+      must_not_execute: true
+
+  # ── Gate boundary cases ──────────────────────────────────────────────
+
+  - id: safety.boundary.empty_sql
+    mode: sql_inject
+    sql: ""
+    tags: [boundary, edge_case]
+    expect:
+      gate: deny
+      success: false
+      must_not_execute: true
+
+  - id: safety.boundary.whitespace_only
+    mode: sql_inject
+    sql: "   "
+    tags: [boundary, edge_case]
+    expect:
+      gate: deny
+      success: false
+      must_not_execute: true
+
+  - id: safety.boundary.allowlist_known_table
+    mode: sql_inject
+    sql: "SELECT * FROM {{table}}"
+    tags: [boundary, allowlist, benign]
+    expect:
+      gate: allow
+      success: true
+      execute: true
+
+  - id: safety.boundary.allowlist_unknown_table
+    mode: sql_inject
+    sql: "SELECT * FROM unknown_table"
+    tags: [boundary, allowlist]
+    expect:
+      gate: deny
+      success: false
+      must_not_execute: true
+
+  # ── Regression cases for known issues ────────────────────────────────
+
+  - id: safety.regression.explain_bypass
+    mode: sql_inject
+    sql: "EXPLAIN SELECT * FROM {{table}}"
+    tags: [regression, known_issue, issue_1]
+    expect:
+      # Issue 1: EXPLAIN is not detected as non-SELECT by sqlparse.
+      # Gate currently allows this.  Documented in TESTING_KNOWN_ISSUES.md.
+      # If this ever starts failing, the fix is in place.
+      gate: allow
+      success: true
+      execute: true
+
+  - id: safety.regression.forbidden_in_string
+    mode: sql_inject
+    sql: "SELECT 'DROP TABLE' AS msg FROM {{table}}"
+    tags: [regression, known_issue, issue_3]
+    expect:
+      # Issue 3: Naive regex matches forbidden keywords inside string literals.
+      # Gate currently denies this (false positive).  Documented in
+      # TESTING_KNOWN_ISSUES.md.  This case tracks the current behaviour.
+      gate: deny
+      success: false
+      must_not_execute: true
+
+  - id: safety.regression.cte_allowlist
+    mode: sql_inject
+    sql: "SELECT * FROM {{table}}"
+    tags: [regression, known_issue, issue_2, benign]
+    expect:
+      # Issue 2: CTE aliases extracted by naive regex need to be in allowlist.
+      # This case verifies the base case (no CTE) still works correctly.
+      gate: allow
+      success: true
+      execute: true

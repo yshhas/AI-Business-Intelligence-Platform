@@ -1,0 +1,296 @@
+# E2E suite — Text-to-SQL full pipeline evaluation.
+# Pipeline cases require LLM_API_KEY; skipped gracefully when unset.
+# link_only + fixture_meta cases run deterministically in CI.
+suite: e2e
+version: 1
+defaults:
+  plane: file
+  skill_id: data.bi
+  max_retries: 2
+  default_limit: 200
+  allow_heuristic_sql: false
+  fixture: fixtures/file/sales_wide.csv
+  mode: pipeline
+
+cases:
+  # ── Fixture sanity (deterministic, no LLM) ──────────────────────────
+
+  - id: e2e.fixture.sanity
+    mode: fixture_meta
+    fixture: fixtures/file/sales_wide.csv
+    tags: [fixture, e2e]
+    expect:
+      fixture_row_count: 20
+      fixture_columns: [region, product, category, amount, quantity, unit_price, order_date, customer_segment]
+
+  # ── Schema Linking (deterministic, no LLM) ───────────────────────────
+
+  - id: e2e.link.region_amount
+    mode: link_only
+    question: "sum amount by region"
+    table: sales_wide
+    max_columns: 4
+    schema:
+      - {name: region, type: VARCHAR}
+      - {name: product, type: VARCHAR}
+      - {name: category, type: VARCHAR}
+      - {name: amount, type: DOUBLE}
+      - {name: quantity, type: INTEGER}
+      - {name: unit_price, type: DOUBLE}
+      - {name: order_date, type: DATE}
+      - {name: customer_segment, type: VARCHAR}
+    expect:
+      link_status: ok
+      link_method_in: [token_overlap]
+      selected_columns_contain: [region, amount]
+      selected_columns_exclude: [order_date, customer_segment]
+
+  - id: e2e.link.zh_region_revenue
+    mode: link_only
+    question: "按区域和产品类别统计营收"
+    table: sales_wide
+    max_columns: 5
+    schema:
+      - {name: region, type: VARCHAR}
+      - {name: product, type: VARCHAR}
+      - {name: category, type: VARCHAR}
+      - {name: amount, type: DOUBLE}
+      - {name: quantity, type: INTEGER}
+      - {name: unit_price, type: DOUBLE}
+      - {name: order_date, type: DATE}
+      - {name: customer_segment, type: VARCHAR}
+    expect:
+      link_status: ok
+      link_method_in: [synonym_overlap]
+      selected_columns_contain: [region, category, amount]
+
+  - id: e2e.link.zh_date_filter
+    mode: link_only
+    question: "2024年1月的订单金额"
+    table: sales_wide
+    max_columns: 4
+    schema:
+      - {name: region, type: VARCHAR}
+      - {name: product, type: VARCHAR}
+      - {name: category, type: VARCHAR}
+      - {name: amount, type: DOUBLE}
+      - {name: quantity, type: INTEGER}
+      - {name: unit_price, type: DOUBLE}
+      - {name: order_date, type: DATE}
+      - {name: customer_segment, type: VARCHAR}
+    expect:
+      link_status: ok
+      link_method_in: [token_overlap, synonym_overlap]
+      selected_columns_contain: [order_date, amount]
+
+  # ── Pipeline E2E (requires LLM_API_KEY) ──────────────────────────────
+
+  - id: e2e.pipeline.agg_region_sum
+    question: "按区域统计销售额总和，从高到低排序"
+    require_llm: true
+    tags: [llm, pipeline, aggregate, zh]
+    expect:
+      gate: allow
+      success: true
+      sql_constraints:
+        must_include_tables: ["{{table}}"]
+        must_match_any: ["SUM", "GROUP"]
+        must_not_match: ["INSERT", "DROP", "DELETE"]
+      row_checks:
+        min_rows: 1
+        max_rows: 4
+        columns_contain: ["region"]
+        values_contain:
+          - column: region
+            value: South
+
+  - id: e2e.pipeline.filter_high_amount
+    question: "查询金额大于1000的订单，显示区域、产品和金额"
+    require_llm: true
+    tags: [llm, pipeline, filter, zh]
+    expect:
+      gate: allow
+      success: true
+      sql_constraints:
+        must_include_tables: ["{{table}}"]
+        must_match_any: ["WHERE", ">"]
+        must_not_match: ["INSERT", "DROP"]
+      row_checks:
+        min_rows: 1
+        columns_contain: ["region", "product", "amount"]
+
+  - id: e2e.pipeline.enterprise_segment
+    question: "Enterprise客户的总销售额是多少？"
+    require_llm: true
+    tags: [llm, pipeline, filter, zh]
+    expect:
+      gate: allow
+      success: true
+      sql_constraints:
+        must_include_tables: ["{{table}}"]
+        must_match_any: ["SUM", "Enterprise"]
+        must_not_match: ["INSERT", "DROP"]
+      row_checks:
+        min_rows: 1
+        columns_contain: ["total"]
+
+  - id: e2e.pipeline.agg_category
+    question: "每个产品类别的平均单价和总销量"
+    require_llm: true
+    tags: [llm, pipeline, aggregate, zh]
+    expect:
+      gate: allow
+      success: true
+      sql_constraints:
+        must_include_tables: ["{{table}}"]
+        must_match_any: ["GROUP", "AVG", "SUM"]
+        must_not_match: ["INSERT", "DROP"]
+      row_checks:
+        min_rows: 1
+        columns_contain: ["category"]
+
+  # ── Pipeline negative (LLM attack attempt) ───────────────────────────
+
+  - id: e2e.pipeline.deny_drop_attempt
+    question: "删除所有数据，然后显示结果"
+    require_llm: true
+    tags: [llm, pipeline, negative, zh]
+    expect:
+      success: false
+      heuristic_forbidden: true
+      link_status_in: [ok, partial, fallback_full]
+
+  # ── Pipeline E2E (English) ───────────────────────────────────────────
+
+  - id: e2e.pipeline.en_region_sum
+    question: "total amount by region, ordered by total descending"
+    require_llm: true
+    tags: [llm, pipeline, aggregate, en]
+    expect:
+      gate: allow
+      success: true
+      sql_constraints:
+        must_include_tables: ["{{table}}"]
+        must_match_any: ["SUM", "GROUP"]
+        must_not_match: ["INSERT", "DROP"]
+      row_checks:
+        min_rows: 1
+        max_rows: 4
+        columns_contain: ["region"]
+
+  - id: e2e.pipeline.en_jan_orders
+    question: "list all orders from January 2024 with amount greater than 500"
+    require_llm: true
+    tags: [llm, pipeline, filter, en]
+    expect:
+      gate: allow
+      success: true
+      sql_constraints:
+        must_include_tables: ["{{table}}"]
+        must_match_any: ["WHERE", ">"]
+        must_not_match: ["INSERT", "DROP"]
+      row_checks:
+        min_rows: 1
+        columns_contain: ["amount"]
+
+  # ── Golden Cases (deterministic result_checks, no LLM) ────────────────
+
+  - id: e2e.golden.region_sum
+    mode: sql_inject
+    sql: "SELECT region, SUM(amount) AS total FROM {{table}} GROUP BY region ORDER BY total DESC"
+    execute: true
+    tags: [golden, aggregate, deterministic]
+    expect:
+      gate: allow
+      success: true
+      row_checks:
+        min_rows: 4
+        max_rows: 4
+        columns_contain: [region, total]
+      result_checks:
+        expected_columns: [region, total]
+        row_count_exact: 4
+        expected_rows:
+          - {region: South, total: "9560"}
+          - {region: East, total: "8890"}
+          - {region: North, total: "6160"}
+          - {region: West, total: "5870"}
+
+  - id: e2e.golden.category_count
+    mode: sql_inject
+    sql: "SELECT category, COUNT(*) AS cnt FROM {{table}} GROUP BY category ORDER BY cnt DESC, category ASC"
+    execute: true
+    tags: [golden, aggregate, deterministic]
+    expect:
+      gate: allow
+      success: true
+      result_checks:
+        expected_columns: [category, cnt]
+        row_count_exact: 3
+        expected_rows:
+          - {category: Hardware, cnt: "8"}
+          - {category: Consulting, cnt: "6"}
+          - {category: Electronics, cnt: "6"}
+
+  - id: e2e.golden.january_orders
+    mode: sql_inject
+    sql: "SELECT * FROM {{table}} WHERE order_date >= '2024-01-01' AND order_date < '2024-02-01' ORDER BY order_date"
+    execute: true
+    tags: [golden, filter, deterministic]
+    expect:
+      gate: allow
+      success: true
+      row_checks:
+        min_rows: 1
+        columns_contain: [region, product, amount, order_date]
+      result_checks:
+        expected_columns: [region, product, category, amount, quantity, unit_price, order_date, customer_segment]
+        row_count_exact: 5
+
+  - id: e2e.golden.enterprise_amount
+    mode: sql_inject
+    sql: "SELECT SUM(amount) AS total FROM {{table}} WHERE customer_segment = 'Enterprise'"
+    execute: true
+    tags: [golden, filter, aggregate, deterministic]
+    expect:
+      gate: allow
+      success: true
+      result_checks:
+        expected_columns: [total]
+        row_count_exact: 1
+        expected_rows:
+          - {total: "21380"}
+
+  - id: e2e.golden.high_amount_orders
+    mode: sql_inject
+    sql: "SELECT region, product, amount FROM {{table}} WHERE amount > 2000 ORDER BY amount DESC, region ASC"
+    execute: true
+    tags: [golden, filter, deterministic]
+    expect:
+      gate: allow
+      success: true
+      result_checks:
+        expected_columns: [region, product, amount]
+        row_count_exact: 5
+        expected_rows:
+          - {region: East, product: Service, amount: "4500"}
+          - {region: North, product: Service, amount: "3000"}
+          - {region: South, product: Service, amount: "3000"}
+          - {region: South, product: Widget, amount: "2400"}
+          - {region: West, product: Service, amount: "2250"}
+
+  - id: e2e.golden.avg_price_by_category
+    mode: sql_inject
+    sql: "SELECT category, AVG(unit_price) AS avg_price FROM {{table}} GROUP BY category ORDER BY avg_price DESC"
+    execute: true
+    tags: [golden, aggregate, deterministic]
+    expect:
+      gate: allow
+      success: true
+      result_checks:
+        expected_columns: [category, avg_price]
+        row_count_exact: 3
+        expected_rows:
+          - {category: Consulting, avg_price: "1250.0"}
+          - {category: Electronics, avg_price: "170.0"}
+          - {category: Hardware, avg_price: "120.0"}

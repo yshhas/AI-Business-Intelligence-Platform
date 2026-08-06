@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--suite",
         default="core",
-        choices=("core", "llm", "quality", "profile", "all"),
+        choices=("core", "llm", "quality", "profile", "e2e", "safety", "repair", "all"),
         help="Suite to run (default: core)",
     )
     parser.add_argument(
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    suites = ["core", "quality", "llm"] if args.suite == "all" else [args.suite]
+    suites = ["core", "quality", "llm", "e2e", "safety", "repair"] if args.suite == "all" else [args.suite]
     exit_code = 0
     combined_reports: list[dict] = []
 
@@ -87,6 +87,27 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"failure_class_distribution={summary.get('failure_class_distribution')}")
         print(f"heuristic_use_count={summary.get('heuristic_use_count')}")
+        if summary.get("pipeline_cases"):
+            print(
+                f"e2e: pipeline_cases={summary.get('pipeline_cases')} "
+                f"e2e_success_rate={summary.get('e2e_success_rate')} "
+                f"sql_gen_pass_rate={summary.get('sql_gen_pass_rate')}"
+            )
+        if summary.get("gate_safety_pass_rate") is not None:
+            print(f"gate_safety_pass_rate={summary.get('gate_safety_pass_rate')}")
+        if summary.get("result_checks_cases"):
+            print(
+                f"result_checks_cases={summary.get('result_checks_cases')} "
+                f"result_accuracy_rate={summary.get('result_accuracy_rate')}"
+            )
+        if summary.get("total_attack_cases"):
+            print(
+                f"safety: attack_cases={summary.get('total_attack_cases')} "
+                f"blocked={summary.get('blocked_attack_count')} "
+                f"safety_pass_rate={summary.get('safety_pass_rate')} "
+                f"regression_cases={summary.get('regression_cases')} "
+                f"regression_pass={summary.get('regression_pass_count')}"
+            )
         if summary.get("schema_link_cases"):
             print(
                 "link: "
@@ -96,6 +117,20 @@ def main(argv: list[str] | None = None) -> int:
                 f"failed_rate={summary.get('link_failed_rate')} "
                 f"passed={summary.get('schema_link_passed')}/{summary.get('schema_link_cases')}"
             )
+        if summary.get("repair_cases"):
+            print(
+                f"repair: cases={summary.get('repair_cases')} "
+                f"triggered={summary.get('repair_triggered_count')} "
+                f"triggered_rate={summary.get('repair_triggered_rate')}"
+            )
+            print(
+                f"repair: success_rate={summary.get('repair_success_rate')} "
+                f"success_count={summary.get('repair_success_count')} "
+                f"denied_rate={summary.get('repair_denied_rate')}"
+            )
+            print(f"repair_by_class={summary.get('repair_by_class')}")
+            print(f"repair_attempt_success_rate={summary.get('repair_attempt_success_rate')}")
+            print(f"max_retry_exceeded_rate={summary.get('max_retry_exceeded_rate')}")
 
         for case in report["cases"]:
             if case.get("skipped"):

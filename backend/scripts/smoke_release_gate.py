@@ -3,6 +3,7 @@
 M3 smoke runs only when POSTGRES_RO_DSN is set.
 P0-1 eval core suite always runs (heuristic forced off; baseline compare if present).
 E1-AC schema linking smoke + quality eval suite always run (deterministic).
+HITL: H1 + H2 (T1–T5) always run (capacity reset between H2 smokes).
 Does not start API/Worker — operator must have Compose deps up.
 
 Usage (from backend/):
@@ -20,6 +21,15 @@ BACKEND = Path(__file__).resolve().parents[1]
 REPO = BACKEND.parent
 PYTHON = sys.executable
 
+# HITL H2 order is intentional: approve API → resume CAS → execute → mock → snapshot
+HITL_H2_SMOKES: list[tuple[str, str]] = [
+    ("hitl_h2/t1_approve_api", "scripts/smoke_hitl_h2_t1_approve_api.py"),
+    ("hitl_h2/t2_resume_cas", "scripts/smoke_hitl_h2_t2_resume_cas.py"),
+    ("hitl_h2/t3_execute", "scripts/smoke_hitl_h2_t3_execute.py"),
+    ("hitl_h2/t4_mock_runtime", "scripts/smoke_hitl_h2_t4_mock_runtime.py"),
+    ("hitl_h2/t5_snapshot", "scripts/smoke_hitl_h2_t5_snapshot.py"),
+]
+
 
 def _run(label: str, args: list[str], *, env: dict | None = None) -> None:
     print(f"\n=== {label} ===")
@@ -33,8 +43,78 @@ def _run(label: str, args: list[str], *, env: dict | None = None) -> None:
         check=False,
     )
     if proc.returncode != 0:
-        raise SystemExit(f"GATE FAIL: {label} (exit {proc.returncode})")
+        raise SystemExit(
+            f"GATE FAIL: stage={label} exit={proc.returncode} "
+            f"cmd={' '.join(args)}"
+        )
     print(f"OK: {label}")
+
+
+def _reset_hitl_smoke_capacity(*, before_stage: str) -> None:
+    """Clear in-flight leftovers between HITL H2 smokes (does not change smoke scripts).
+
+    H2 smokes park/awaiting or briefly run; without reset, later smokes hit
+    run_max_in_flight and fail as pending — false negatives in the gate.
+    """
+    print(f"\n=== hitl_capacity_reset (before {before_stage}) ===")
+    code = r"""
+from datetime import UTC, datetime
+from sqlalchemy import or_, update
+from app.core.config import get_settings
+from app.core.db import SessionLocal
+from app.models import AnalysisTask
+from app.services import queue as q
+from app.services import run_lifecycle as rl
+from app.services import runtime_essentials as rt
+
+db = SessionLocal()
+try:
+    s = get_settings()
+    now = datetime.now(UTC)
+    db.execute(
+        update(AnalysisTask)
+        .where(
+            or_(
+                AnalysisTask.status == "running",
+                AnalysisTask.status == rl.STATUS_AWAITING_APPROVAL,
+            )
+        )
+        .values(
+            status="failed",
+            failure_class="internal_error",
+            error_message="release_gate: HITL smoke capacity reset",
+            finished_at=now,
+            hitl_resume_requested=False,
+        )
+    )
+    db.commit()
+    r = q.get_redis()
+    r.delete(s.hitl_resume_queue_key, s.analysis_queue_key)
+    print(f"inflight_after={rt.count_running(db)}")
+finally:
+    db.close()
+"""
+    proc = subprocess.run(
+        [PYTHON, "-c", code],
+        cwd=str(BACKEND),
+        env=os.environ.copy(),
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise SystemExit(
+            f"GATE FAIL: stage=hitl_capacity_reset before={before_stage} "
+            f"exit={proc.returncode}"
+        )
+    print(f"OK: hitl_capacity_reset (before {before_stage})")
+
+
+def _run_hitl_h2_suite() -> None:
+    print("\n========== HITL H2 suite (T1→T5) ==========")
+    for label, rel in HITL_H2_SMOKES:
+        _reset_hitl_smoke_capacity(before_stage=label)
+        _run(label, [PYTHON, rel])
+    _reset_hitl_smoke_capacity(before_stage="hitl_h2/complete")
+    print("OK: HITL H2 suite complete")
 
 
 def main() -> None:
@@ -75,6 +155,9 @@ def main() -> None:
     ]
     for label, rel in core:
         _run(label, [PYTHON, *rel])
+
+    # HITL H2 — after H1 (in core); ordered T1→T5 with capacity isolation
+    _run_hitl_h2_suite()
 
     dsn = (os.environ.get("POSTGRES_RO_DSN") or "").strip()
     if dsn:
