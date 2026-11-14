@@ -37,7 +37,14 @@
 
 ## 效果展示
 
-> 以下截图来自本地 Compose 环境，未配置外部 LLM：SQL 由确定性回退逻辑生成并真实执行，用于展示界面、Trace 与交付形态；配置 `LLM_API_KEY` 后即可进行真实模型问答。
+> **截图来自本地 Compose 的真实页面，但不是真实 LLM 输出。**
+>
+> | 模式 | 配置 | SQL 来源 | 截图 |
+> |------|------|----------|------|
+> | 确定性回退（本页截图） | 未配置 `LLM_API_KEY`，`ALLOW_HEURISTIC_SQL=true` | 规则匹配 | 8 张 |
+> | 真实 LLM | 配置 `LLM_API_KEY`，建议关闭 heuristic | 模型生成 | 未拍摄（不产生 API 费用） |
+>
+> heuristic 只做规则匹配，语义理解有限：例如"各区域订单金额"可能被按 `product` 分组。它用于验证 UI、Trace 与交付链路，**不代表真实 LLM 模式的回答质量**。详见 [TESTING_KNOWN_ISSUES.md](docs/testing/TESTING_KNOWN_ISSUES.md)。
 
 ![登录页](docs/images/01-login.png)
 
@@ -412,6 +419,7 @@ CI：[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 执行前端 lint/bu
 - 当前只提供本地部署，没有在线 Demo。
 - 非目标：RAG 问答主路径、自由 ReAct、通用多智能体平台、Connector Framework。
 - `mock` 模式仅用于界面与生命周期演示，不代表真实问答效果。
+- `ALLOW_HEURISTIC_SQL=true` 的确定性回退只做规则匹配，不能理解复杂语义；真实问答必须配置 LLM，不能用回退结果代表模型效果。
 
 ---
 

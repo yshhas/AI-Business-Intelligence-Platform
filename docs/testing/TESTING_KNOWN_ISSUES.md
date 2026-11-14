@@ -170,3 +170,55 @@ _LONG_TOKEN = re.compile(r"\b(?:sk|pk|rk)[_-][A-Za-z0-9_-]{16,}\b")
 ```
 
 ### 优先级：P2（中优先级，建议修复以增强防御）
+
+---
+
+## 附：Heuristic 回退模式的语义局限（Demo）
+
+> 2026-11-14 | 无 LLM Key 的本地演示说明
+
+### 背景
+
+当未配置 `LLM_API_KEY` 且 `ALLOW_HEURISTIC_SQL=true` 时，`generate_sql` 与
+`summarize` 会走确定性规则回退，而不是真实 LLM 调用。该模式用于在没有外部
+API 的情况下验证任务生命周期、SQL Gate、Trace、Artifacts 与 UI。
+
+### 具体表现
+
+本地演示问题：
+
+```text
+各区域订单总金额是多少？按金额降序
+```
+
+heuristic 实际生成的 SQL 为：
+
+```sql
+SELECT "product" AS dim, SUM("amount") AS total
+FROM "public"."demo_orders"
+GROUP BY "product" ORDER BY total DESC
+LIMIT 200
+```
+
+问题中的"区域"没有被识别，规则回退选择了 `product` 维度。这说明 heuristic
+只做关键词/模板匹配，不能保证维度语义正确。
+
+### 影响范围
+
+- **不影响**：任务状态、队列、Worker、SQL Gate、只读执行、Trace、Artifacts、HITL、UI。
+- **影响**：答案的语义正确性，以及 `llm_total_tokens` / 真实调用相关断言。
+- **不能作为**：真实 LLM 问答质量的证据。
+
+### 定位与使用建议
+
+- 仅用于无 Key 的界面与链路演示；真实问答必须配置 `LLM_API_KEY`。
+- 真实/生产环境应保持 `ALLOW_HEURISTIC_SQL=false`。
+- 演示文档与截图必须标注运行模式，避免被误解为模型输出。
+
+### 可选改进（本轮不修改核心业务逻辑）
+
+1. 为 heuristic 增加维度词映射（如"区域 → region"）及对应单测；
+2. 限制 heuristic 只处理明确支持的模板，无法匹配时直接返回 `skill_error`；
+3. 若需要展示真实语义能力，使用真实 LLM 单独截图并标注。
+
+### 优先级：P3（演示说明，不影响主链路正确性）
