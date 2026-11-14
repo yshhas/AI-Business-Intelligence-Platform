@@ -71,7 +71,7 @@ flowchart TB
 | Data Plane | `file` · `postgres_ro` · optional `mysql_ro` |
 | Trace | Steps · Execution Trace · Artifacts · `failure_class` |
 
-**SSOT：** [`project_upgrade_plan.md`](../project_upgrade_plan.md) · Charter [`docs/PLATFORM_CHARTER.md`](PLATFORM_CHARTER.md)
+**SSOT：** [`project_upgrade_plan.md`](archive/roadmap/project_upgrade_plan.md) · Charter [`docs/architecture/PLATFORM_CHARTER.md`](architecture/PLATFORM_CHARTER.md)
 
 ---
 
@@ -141,7 +141,7 @@ flowchart TB
 | Frontend skill picker | UX；API 已支持 `skill_id` |
 | Celery / 增量 steps | **仅 Metrics 证明瓶颈后** |
 
-详见 [`FINAL_STABILIZATION_REVIEW.md`](FINAL_STABILIZATION_REVIEW.md) §6。
+详见 [`FINAL_STABILIZATION_REVIEW.md`](archive/reviews/FINAL_STABILIZATION_REVIEW.md) §6。
 
 ---
 
@@ -150,14 +150,14 @@ flowchart TB
 | Doc | Purpose |
 |-----|---------|
 | [FINAL_RELEASE.md](FINAL_RELEASE.md) | 本文件 |
-| [RESUME_HIGHLIGHTS.md](RESUME_HIGHLIGHTS.md) | 简历亮点 |
-| [INTERVIEW_GUIDE.md](INTERVIEW_GUIDE.md) | 面试指南 |
-| [FINAL_STABILIZATION_REVIEW.md](FINAL_STABILIZATION_REVIEW.md) | 稳定化审查 |
-| [DIRECTORY_STRUCTURE.md](DIRECTORY_STRUCTURE.md) | 目录结构 |
+| [RESUME_HIGHLIGHTS.md](archive/interview/RESUME_HIGHLIGHTS.md) | 简历亮点 |
+| [INTERVIEW_GUIDE.md](archive/interview/INTERVIEW_GUIDE.md) | 面试指南 |
+| [FINAL_STABILIZATION_REVIEW.md](archive/reviews/FINAL_STABILIZATION_REVIEW.md) | 稳定化审查 |
+| [DIRECTORY_STRUCTURE.md](architecture/DIRECTORY_STRUCTURE.md) | 目录结构 |
 | [../README.md](../README.md) | 快速开始 |
-| [../project_upgrade_plan.md](../project_upgrade_plan.md) | 路线图 SSOT |
-| [API_ERROR_CODES.md](API_ERROR_CODES.md) | API 契约 |
-| [OPS_RUNBOOK.md](OPS_RUNBOOK.md) | 部署运维 |
+| [../project_upgrade_plan.md](archive/roadmap/project_upgrade_plan.md) | 路线图 SSOT |
+| [API_ERROR_CODES.md](ops/API_ERROR_CODES.md) | API 契约 |
+| [OPS_RUNBOOK.md](ops/OPS_RUNBOOK.md) | 部署运维 |
 
 ---
 

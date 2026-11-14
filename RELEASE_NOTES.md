@@ -6,7 +6,7 @@
 
 > v1.0 froze the governed spine. **v1.1** adds honest runtime cancel, refresh revoke, bounded memory/results, Product Shell visibility, and documented token storage — without Phase 2 features.
 
-Canonical plan: [docs/V2_IMPLEMENTATION_PLAN.md](docs/V2_IMPLEMENTATION_PLAN.md) · Token ADR: [docs/ADR_TOKEN_STORAGE.md](docs/ADR_TOKEN_STORAGE.md)
+Canonical plan: [docs/V2_IMPLEMENTATION_PLAN.md](docs/archive/roadmap/V2_IMPLEMENTATION_PLAN.md) · Token ADR: [docs/ADR_TOKEN_STORAGE.md](docs/design/ADR_TOKEN_STORAGE.md)
 
 ---
 
@@ -110,7 +110,7 @@ The second Skill (`data.profile`) proves the platform can extend under the same 
 | P2 | Large `result_json` retained in Postgres (archive later) |
 | P2 | OIDC / MySQL RO not production-validated against a real IdP |
 
-See also: [docs/FINAL_STABILIZATION_REVIEW.md](docs/FINAL_STABILIZATION_REVIEW.md) §4–§6.
+See also: [docs/FINAL_STABILIZATION_REVIEW.md](docs/archive/reviews/FINAL_STABILIZATION_REVIEW.md) §4–§6.
 
 ---
 

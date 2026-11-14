@@ -59,7 +59,7 @@ load_context → link_schema → generate_sql → validate_sql → execute_sql
 load_context → profile_schema (Policy SELECT aggregates) → summarize → write_report
 ```
 
-Same Worker / Lifecycle / Trace path as `data.bi`. Charter: `docs/SKILL_DATA_PROFILE_CHARTER.md`.
+Same Worker / Lifecycle / Trace path as `data.bi`. Charter: `docs/architecture/SKILL_DATA_PROFILE_CHARTER.md`.
 
 ## Lifecycle settings
 

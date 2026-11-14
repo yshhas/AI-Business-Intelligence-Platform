@@ -59,7 +59,7 @@ Report `summary` includes:
 
 ## Prompt change gate
 
-See [`docs/PROMPT_CHANGE_GATE.md`](../docs/PROMPT_CHANGE_GATE.md).  
+See [`docs/PROMPT_CHANGE_GATE.md`](../docs/design/PROMPT_CHANGE_GATE.md).  
 Bump `PROMPT_SQL_VERSION` in `agent/prompts_sql.py` when prompts change, then re-run core + quality suites.
 
 ## Updating the baseline

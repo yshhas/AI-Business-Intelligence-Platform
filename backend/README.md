@@ -43,4 +43,4 @@ scripts/          smoke_* + release gate
 
 Agent package lives at repo `../agent` — Worker calls **only** `agent.runtime.run_analysis`.
 
-See [../docs/OPS_RUNBOOK.md](../docs/OPS_RUNBOOK.md) · [../docs/API_ERROR_CODES.md](../docs/API_ERROR_CODES.md).
+See [../docs/OPS_RUNBOOK.md](../docs/ops/OPS_RUNBOOK.md) · [../docs/API_ERROR_CODES.md](../docs/ops/API_ERROR_CODES.md).

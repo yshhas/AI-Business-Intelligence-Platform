@@ -2,7 +2,7 @@
 
 **Status:** **Release v1.0 Feature Freeze**  
 **Stack:** Compose (Postgres + Redis + postgres_ro + API + Worker) · host frontend optional  
-**Full narrative:** [FINAL_RELEASE.md](./FINAL_RELEASE.md)
+**Full narrative:** [FINAL_RELEASE.md](FINAL_RELEASE.md)
 
 ## Bring-up
 
@@ -75,4 +75,4 @@ python scripts/smoke_eval_golden.py --suite core
 python scripts/smoke_eval_golden.py --suite quality
 ```
 
-See [OPS_RUNBOOK.md](./OPS_RUNBOOK.md) and [API_ERROR_CODES.md](./API_ERROR_CODES.md).
+See [OPS_RUNBOOK.md](ops/OPS_RUNBOOK.md) and [API_ERROR_CODES.md](ops/API_ERROR_CODES.md).
