@@ -193,7 +193,7 @@ function LinkBrand() {
   return (
     <NavLink to="/" end className="app-brand">
       <span className="app-brand-mark" aria-hidden />
-      <span className="app-brand-text">AI BI Platform</span>
+      <span className="app-brand-text">企业级数据智能体平台</span>
     </NavLink>
   )
 }

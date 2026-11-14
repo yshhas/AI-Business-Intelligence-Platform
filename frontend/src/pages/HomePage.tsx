@@ -30,8 +30,8 @@ export function HomePage() {
   return (
     <section className="landing">
       <div className="landing-hero">
-        <p className="landing-kicker">AI Business Intelligence</p>
-        <h1 className="landing-title">AI BI Platform</h1>
+        <p className="landing-kicker">Enterprise Data Agent Platform</p>
+        <h1 className="landing-title">企业级数据智能体平台</h1>
         <p className="landing-lead">
           Turn workspace data into trustworthy answers — from dataset to analysis,
           execution trace, and shareable artifacts.
