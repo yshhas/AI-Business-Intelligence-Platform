@@ -20,7 +20,7 @@
 | 核心链路 | 提问 → Schema Linking → SQL 生成 → 安全校验 → 人工审批（可选）→ 只读执行 → 结果交付 |
 | 我的角色 | 独立设计与实现：架构、后端、Agent 流水线、评测体系、前端工作台 |
 | 技术栈 | Python · FastAPI · LangGraph · PostgreSQL · Redis · DuckDB · React · TypeScript · Docker |
-| 当前状态 | 本地可运行；单元测试 **737 passed**；GitHub Actions `CI Release Gate` 通过 |
+| 当前状态 | 本地可运行；单元测试 **737 passed**；已推送版本 CI `CI Release Gate` 通过（最新整理提交待推送后验证） |
 | 适用场景 | 求职项目展示、Agent 架构评审、企业数据分析 PoC |
 
 ### 这个项目解决了什么问题
