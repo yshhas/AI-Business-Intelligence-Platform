@@ -8,7 +8,10 @@
 **/.mypy_cache
 **/.ruff_cache
 **/node_modules
-frontend
+# frontend source is required by the web image build (frontend/Dockerfile);
+# only build output and installed deps are excluded.
+frontend/dist
+frontend/node_modules
 docs
 data/uploads
 data/duckdb

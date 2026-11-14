@@ -1,0 +1,17 @@
+# Phase 1 — root-level entrypoint so `docker compose up --build` works from the repo root.
+#
+# This file intentionally contains no service definitions: it reuses the canonical
+# stack in docker/docker-compose.yml. Compose resolves relative paths inside an
+# included file against that file's own location, so `context: ..`, the
+# `../data:/app/data` volume and `env_file: ../.env` all keep working unchanged.
+#
+# Requires Docker Compose >= v2.20 (verified locally: v5.3.1).
+#
+# Usage (repo root):
+#   copy .env.example .env
+#   docker compose up --build
+#
+# Observability stack (optional):
+#   docker compose --profile obs up -d
+include:
+  - path: docker/docker-compose.yml

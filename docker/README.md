@@ -19,18 +19,29 @@ Shared volume: repo `data/` → `/app/data` (uploads + DuckDB) for both api and 
 
 ## Full stack
 
-From **repo root**:
+From **repo root** (root `compose.yaml` includes this file):
 
 ```powershell
 copy .env.example .env   # once
-docker compose -f docker/docker-compose.yml --env-file .env up -d --build
+docker compose up -d --build
 curl http://127.0.0.1:8000/health/ready
 curl http://127.0.0.1:8080/health/ready   # via web proxy
 ```
 
+Equivalent explicit form:
+
+```powershell
+docker compose -f docker/docker-compose.yml --env-file .env up -d --build
+```
+
 UI: open **http://127.0.0.1:8080** (nginx serves SPA and proxies `/api` to `api:8000`).
 
-Golden path: upload CSV → Analyze → Trace / Artifacts.
+Golden path: upload CSV → Analyze → Trace / Artifacts.  
+Seeded alternative (compose `postgres_ro_init`) — bind the demo RO tables and run end-to-end:
+
+```powershell
+python backend/scripts/demo_bootstrap.py --ask "各区域订单总金额是多少？按金额降序"
+```
 
 ### Observability (optional)
 
@@ -46,7 +57,7 @@ Prometheus config: `docker/observability/prometheus.yml` → `api:8000/metrics`.
 docker compose -f docker/docker-compose.yml up -d postgres redis postgres_ro
 ```
 
-Then run uvicorn + worker from `backend/.venv` (see [OPS_RUNBOOK.md](../docs/OPS_RUNBOOK.md) Path B).
+Then run uvicorn + worker from `backend/.venv` (see [OPS_RUNBOOK.md](../docs/ops/OPS_RUNBOOK.md) Path B).
 
 ## URLs
 
@@ -74,4 +85,4 @@ docker logs -f aibi-worker
 docker logs -f aibi-web
 ```
 
-See also [OBSERVABILITY.md](../docs/OBSERVABILITY.md) and [DUCKDB_TOPOLOGY.md](../docs/DUCKDB_TOPOLOGY.md).
+See also [OBSERVABILITY.md](../docs/ops/OBSERVABILITY.md) and [DUCKDB_TOPOLOGY.md](../docs/architecture/DUCKDB_TOPOLOGY.md).
