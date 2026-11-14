@@ -1,7 +1,7 @@
 """T-12 smoke: Docker Compose app stack wiring (static; no daemon required).
 
 Validates Dockerfile + compose define api/worker alongside existing infra.
-Live bring-up is operator-side (see docs/OPS_RUNBOOK.md).
+Live bring-up is operator-side (see docs/ops/OPS_RUNBOOK.md).
 """
 
 from __future__ import annotations
